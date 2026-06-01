@@ -13,6 +13,7 @@
     "record": "tsx src/sim/recorder.ts",
     "backtest": "tsx src/sim/runBacktest.ts",
     "dashboard": "tsx src/cli/dashboard.ts",
+    "analyze": "tsx src/cli/analyze.ts",
     "gen-wallet": "tsx scripts/gen-wallet.ts",
     "test": "vitest run",
     "test:watch": "vitest",
