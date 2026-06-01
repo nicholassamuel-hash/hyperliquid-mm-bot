@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Paper-trading market maker for Hyperliquid perp DEX. Phase 1: no real money.",
   "scripts": {
-    "build": "tsc -p .",
+    "build": "tsc -p tsconfig.build.json",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
     "paper": "tsx src/sim/runPaper.ts",
