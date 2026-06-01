@@ -1,0 +1,17 @@
+services:
+  bot:
+    build: .
+    container_name: hyperliquid-mm-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - NODE_ENV=production
+    # Override CMD for live: `docker compose run --rm bot node dist/sim/runLive.js`
+    healthcheck:
+      test: ["CMD", "test", "-f", "/app/data/bot.db"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
