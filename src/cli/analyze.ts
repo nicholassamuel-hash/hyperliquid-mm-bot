@@ -34,12 +34,6 @@ function pnl(n: number): string {
   return dim(`$${n.toFixed(4)}`);
 }
 
-function pct(n: number): string {
-  const s = `${n.toFixed(2)}%`;
-  if (n > 0) return green(s);
-  if (n < 0) return red(s);
-  return dim(s);
-}
 
 function bar(value: number, max: number, width = 30): string {
   if (max === 0) return dim("─".repeat(width));
