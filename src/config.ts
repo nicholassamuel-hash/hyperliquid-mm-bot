@@ -23,7 +23,7 @@ const schema = z.object({
   /** Multiplier from realized vol to effective half-spread. */
   VOL_MULTIPLIER: z.coerce.number().min(0.1).default(1.5),
 
-  QUOTE_SIZE_USD: z.coerce.number().min(0.5).default(2),
+  QUOTE_SIZE_USD: z.coerce.number().min(0.1).default(0.5),
   MAX_POSITION_USD: z.coerce.number().min(1).default(20),
   MAX_MARGIN_USD: z.coerce.number().min(1).default(15),
   REPLACE_COOLDOWN_MS: z.coerce.number().min(50).default(200),

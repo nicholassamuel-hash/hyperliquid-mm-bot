@@ -161,6 +161,8 @@ async function main() {
     if (fill) {
       const newPos = inventory.apply(fill);
       db.recordFill(fill);
+      // Notify strategy of fill so it can refresh quote (bypass cooldown)
+      mm.onFill(fill.coin, fill.side, fill.size);
       log.info(
         {
           coin: trade.coin,

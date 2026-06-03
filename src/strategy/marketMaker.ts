@@ -26,6 +26,7 @@ import type {
   PriceChangeEvent,
   Position,
   MarketContext,
+  Side,
 } from "../types.js";
 import { midprice, roundPrice, roundSize, BASE_MAKER_FEE } from "../util/math.js";
 import { AdverseGuard } from "./adverseGuard.js";
@@ -173,12 +174,17 @@ export class MarketMaker {
     const obi = this.computeOBI(snap);
     skewBps += obi * this.cfg.obiWeight * halfSpreadBps * 0.5;
 
-    // Inventory flat-bias
+    // Inventory flat-bias — sqrt scaling so bias kicks in earlier (more aggressive
+    // at low/mid utilization). Linear was too lazy: bot accumulated whole position
+    // before bias became meaningful, then got stuck near cap.
     if (position && position.coinSize !== 0) {
       const posNotional = Math.abs(position.coinSize) * mid;
       const utilization = Math.min(1, posNotional / this.cfg.maxPositionUsd);
+      // sqrt: util=0.25 → 50% bias, util=0.5 → 71% bias, util=1.0 → 100% bias
+      const aggressive = Math.sqrt(utilization);
       // long → want to sell → push quotes down to attract sells
-      skewBps -= Math.sign(position.coinSize) * utilization * this.cfg.invFlatWeight * halfSpreadBps;
+      skewBps -=
+        Math.sign(position.coinSize) * aggressive * this.cfg.invFlatWeight * halfSpreadBps;
     }
 
     const skewAmount = (skewBps / 10_000) * mid;
@@ -300,6 +306,32 @@ export class MarketMaker {
       return this.cancel(event.coin, `adverse: ${signal.reason}`, "cancelled_adverse");
     }
     return { kind: "noop", outcome: "noop" };
+  }
+
+  /**
+   * Notify strategy that a fill happened against our quote.
+   * Reduces remaining size on the filled side. If quote depleted (both sides 0
+   * OR one side < 50% remaining), bypass cooldown on next onBook so we
+   * re-quote immediately instead of sitting stale.
+   */
+  onFill(coin: string, side: Side, filledSize: number): void {
+    const cur = this.currentQuote.get(coin);
+    if (!cur) return;
+    // side here is OUR side: BUY=our bid hit, SELL=our ask hit
+    if (side === "BUY") {
+      cur.bidSize = Math.max(0, cur.bidSize - filledSize);
+    } else {
+      cur.askSize = Math.max(0, cur.askSize - filledSize);
+    }
+    // If the active side is fully depleted, force replacement on next book event
+    const bothDepleted = cur.bidSize === 0 && cur.askSize === 0;
+    if (bothDepleted) {
+      this.currentQuote.delete(coin);
+      this.lastReplaceAt.delete(coin); // bypass cooldown
+    } else {
+      // One side depleted → force re-quote sooner by resetting cooldown
+      this.lastReplaceAt.delete(coin);
+    }
   }
 
   private cancel(coin: string, reason: string, outcome: QuoteOutcome): QuoteCommand {
