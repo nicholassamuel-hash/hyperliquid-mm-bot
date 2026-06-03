@@ -233,16 +233,25 @@ export class MarketMaker {
     if (bidSize < minSz) bidSize = 0;
     if (askSize < minSz) askSize = 0;
 
-    // Inventory limits
+    // Inventory limits — IMPORTANT: allow the CLOSING side past caps,
+    // only block side that would ADD to position. Otherwise bot gets
+    // stuck unable to flatten (bug observed 2026-06-02).
     if (position) {
       const posNotional = Math.abs(position.coinSize) * mid;
       if (posNotional >= this.cfg.maxPositionUsd) {
-        if (position.coinSize > 0) bidSize = 0;
-        else askSize = 0;
+        if (position.coinSize > 0) bidSize = 0; // long & at cap → don't buy more
+        else if (position.coinSize < 0) askSize = 0; // short & at cap → don't sell more
       }
       if (position.marginUsed >= this.cfg.maxMarginUsd) {
-        bidSize = 0;
-        askSize = 0;
+        if (position.coinSize > 0) {
+          bidSize = 0; // long → block adds, allow asks to close
+        } else if (position.coinSize < 0) {
+          askSize = 0; // short → block adds, allow bids to close
+        } else {
+          // Flat but margin used? Edge case — block both
+          bidSize = 0;
+          askSize = 0;
+        }
       }
     }
 

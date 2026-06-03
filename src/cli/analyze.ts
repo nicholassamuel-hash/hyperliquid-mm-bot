@@ -99,17 +99,27 @@ function main() {
 
   const fills = fillsStats.n;
   const fillRate = placed > 0 ? (fills / placed) * 100 : 0;
-  const realizedFromMatching =
+  // Net cash flow (NOT realized PnL — includes value of open positions)
+  const netCashFlow =
     fillsStats.sellNotional - fillsStats.buyNotional - fillsStats.totalFees;
+  // True realized requires position to be fully closed. Open positions skew this.
+  const positionOpen = Math.abs(fillsStats.netSize) > 1e-9;
 
-  console.log(bold("💵 FILLS & PnL"));
+  console.log(bold("💵 FILLS & CASH FLOW"));
   console.log(`  Total fills:              ${String(fills).padStart(10)}`);
   console.log(`  Sell notional:            ${`$${fillsStats.sellNotional.toFixed(4)}`.padStart(12)}`);
   console.log(`  Buy notional:             ${`$${fillsStats.buyNotional.toFixed(4)}`.padStart(12)}`);
   console.log(`  Fees paid:                ${red(`$${fillsStats.totalFees.toFixed(6)}`.padStart(14))}`);
   console.log(`  Fill rate per quote:      ${fillRate.toFixed(2).padStart(7)}%`);
   console.log("");
-  console.log(`  ${bold("Realized PnL (close-to-close):")}  ${pnl(realizedFromMatching).padStart(20)}`);
+  if (positionOpen) {
+    console.log(`  ${bold("Net cash flow:")}                ${pnl(netCashFlow).padStart(20)}`);
+    console.log(
+      yellow(`  ⚠ Position OPEN — true PnL depends on close price. Cash flow ≠ realized profit.`),
+    );
+  } else {
+    console.log(`  ${bold("Realized PnL (all closed):")}     ${pnl(netCashFlow).padStart(20)}`);
+  }
   console.log("");
 
   // === PER COIN POSITION ===
@@ -167,29 +177,36 @@ function main() {
   // === VERDICT ===
   console.log(bold("🎯 VERDICT"));
   if (fills === 0) {
-    console.log(red("  ✗ No fills in 24h. Strategy too defensive or market too thin."));
+    console.log(red("  ✗ No fills in window. Strategy too defensive or market too thin."));
     console.log(dim("  → Lower HALF_SPREAD_BPS_MIN, ADVERSE_THRESHOLD_BPS_MIN. Try a different coin."));
-  } else if (realizedFromMatching > 0.05) {
-    console.log(green(`  ✓ Net positive PnL: ${pnl(realizedFromMatching)}`));
-    console.log(dim("  → Consider Phase 2: $5-10 live micro test before scaling to $30."));
-  } else if (realizedFromMatching > -0.05) {
-    console.log(yellow(`  ~ Break-even: ${pnl(realizedFromMatching)} (within noise)`));
+  } else if (positionOpen) {
+    console.log(
+      yellow(`  ⚠ Position OPEN — verdict deferred until close. Cash flow ${pnl(netCashFlow)} is NOT a profit number.`),
+    );
+    console.log(
+      dim(`  → Wait for position to flatten naturally, or restart bot from clean state.`),
+    );
+  } else if (netCashFlow > 0.05) {
+    console.log(green(`  ✓ Net realized profit (closed cycle): ${pnl(netCashFlow)}`));
+    console.log(dim("  → Consider Phase 2: $5-10 live micro test before scaling."));
+  } else if (netCashFlow > -0.05) {
+    console.log(yellow(`  ~ Break-even (closed cycle): ${pnl(netCashFlow)} (within noise)`));
     console.log(dim("  → Need more data. Run another 24-48h. Or tune more aggressive."));
   } else {
-    console.log(red(`  ✗ Net negative PnL: ${pnl(realizedFromMatching)}`));
+    console.log(red(`  ✗ Net loss (closed cycle): ${pnl(netCashFlow)}`));
     console.log(dim("  → Strategy lacks edge at this latency. Consider pivot."));
   }
 
   if (adverseRate > 80 && placed > 50) {
     console.log("");
     console.log(yellow("  ⚠ Adverse rate >80% — latency from Jakarta likely the bottleneck."));
-    console.log(dim("    Going live live won't help. Consider US/EU VPS or HLP vault instead."));
+    console.log(dim("    Going live won't help. Consider US/EU VPS or HLP vault instead."));
   }
 
   if (placed > 0 && cancelledSkip / placed > 5) {
     console.log("");
-    console.log(yellow("  ⚠ Lots of cancelled_skip — bot stuck at margin/position cap."));
-    console.log(dim("    Known bug: margin guard blocks closing side too. Increase MAX_MARGIN_USD."));
+    console.log(yellow("  ⚠ Lots of cancelled_skip — bot likely hit margin/position cap & got stuck."));
+    console.log(dim("    Bug fix landed 2026-06-02. Update + restart to use it."));
   }
 
   console.log("");
