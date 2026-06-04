@@ -39,6 +39,15 @@ const schema = z.object({
   /** Inventory flat-bias weight 0-1. */
   INV_FLAT_WEIGHT: z.coerce.number().min(0).max(1).default(0.4),
 
+  /** Vol spike detection: pause when shortVol/baselineVol > multiplier. */
+  VOL_SPIKE_MULTIPLIER: z.coerce.number().min(1).default(3),
+  /** Short-window bar count for spike detection. */
+  VOL_SPIKE_SHORT_BARS: z.coerce.number().int().min(2).default(5),
+  /** Baseline window bar count. Must be >= 10. */
+  VOL_SPIKE_BASELINE_BARS: z.coerce.number().int().min(10).default(30),
+  /** Pause duration (ms) after spike detection. */
+  VOL_PAUSE_MS: z.coerce.number().int().min(1000).default(60_000),
+
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });
 

@@ -61,12 +61,21 @@ export interface MMConfig {
   obiWeight: number;
   /** Inventory flat-bias weight (0-1). */
   invFlatWeight: number;
+  /** Spike ratio threshold (short-vol/baseline-vol) above which bot pauses. */
+  volSpikeMultiplier: number;
+  /** Short-window bar count for spike detection. */
+  volSpikeShortBars: number;
+  /** Baseline window bar count for spike detection. */
+  volSpikeBaselineBars: number;
+  /** Pause duration after spike detection (ms). */
+  volPauseMs: number;
 }
 
 export type QuoteOutcome =
   | "placed"
   | "cancelled_adverse"
   | "cancelled_skip"
+  | "cancelled_vol_pause"
   | "noop";
 
 export interface QuoteCommand {
@@ -81,6 +90,8 @@ export class MarketMaker {
   private lastReplaceAt = new Map<string, number>();
   private adverse: AdverseGuard;
   private vol = new Map<string, VolTracker>();
+  /** Per-coin pause end timestamp (ms). Bot skips quote until past this. */
+  private pauseUntil = new Map<string, number>();
 
   constructor(
     private readonly cfg: MMConfig,
@@ -92,10 +103,31 @@ export class MarketMaker {
   private getVol(coin: string): VolTracker {
     let v = this.vol.get(coin);
     if (!v) {
-      v = new VolTracker(60);
+      // Buffer must hold baselineBars + shortBars (for clean pre-spike baseline)
+      // plus a margin for general vol-adaptive computations.
+      const bufferSize = Math.max(
+        60,
+        this.cfg.volSpikeBaselineBars + this.cfg.volSpikeShortBars + 10,
+      );
+      v = new VolTracker(bufferSize);
       this.vol.set(coin, v);
     }
     return v;
+  }
+
+  /** Check if current short-window vol exceeds pre-spike baseline by multiplier. */
+  private isVolSpike(coin: string): boolean {
+    const v = this.getVol(coin);
+    const needed = this.cfg.volSpikeBaselineBars + this.cfg.volSpikeShortBars;
+    if (v.count() < needed) return false;
+    const ratio = v.spikeRatio(this.cfg.volSpikeShortBars, this.cfg.volSpikeBaselineBars);
+    return ratio > this.cfg.volSpikeMultiplier;
+  }
+
+  /** True if bot is currently in vol-pause for this coin. */
+  private isPaused(coin: string, now: number): boolean {
+    const until = this.pauseUntil.get(coin);
+    return until !== undefined && now < until;
   }
 
   /**
@@ -115,8 +147,7 @@ export class MarketMaker {
     const tickSize = ctx?.tickSize ?? 0.0001;
     const naturalSpreadBps = ((bestAsk - bestBid) / mid) * 10_000;
 
-    // Update vol & compute adaptive half-spread
-    this.getVol(snap.coin).push(mid, snap.timestamp);
+    // Vol tracker is updated upstream in onBook(); just read here.
     const realizedVolBps = this.getVol(snap.coin).stddevBps();
     const volScaled = Math.max(
       this.cfg.halfSpreadBpsMin,
@@ -219,6 +250,36 @@ export class MarketMaker {
   ): QuoteCommand {
     if (snap.bids.length === 0 || snap.asks.length === 0) {
       return { kind: "noop", reason: "empty book", outcome: "noop" };
+    }
+
+    // Vol spike detection — pause bot during chaos.
+    // computePrices already feeds VolTracker, but spike check happens AFTER
+    // tracker is warm, so we check it BEFORE computePrices' edge gate.
+    // We update vol first, then check spike.
+    const bestBid = snap.bids[0]!.price;
+    const bestAsk = snap.asks[0]!.price;
+    const midNow = (bestBid + bestAsk) / 2;
+    this.getVol(snap.coin).push(midNow, snap.timestamp);
+
+    // If already in pause window, skip this update.
+    if (this.isPaused(snap.coin, snap.timestamp)) {
+      return this.cancel(snap.coin, "vol_pause active", "cancelled_vol_pause");
+    }
+
+    // Detect new spike → enter pause and skip this update.
+    if (this.isVolSpike(snap.coin)) {
+      this.pauseUntil.set(snap.coin, snap.timestamp + this.cfg.volPauseMs);
+      const v = this.getVol(snap.coin);
+      const ratio = v.spikeRatio(this.cfg.volSpikeShortBars, this.cfg.volSpikeBaselineBars);
+      this.log.warn(
+        {
+          coin: snap.coin,
+          ratio: ratio.toFixed(2),
+          pauseMs: this.cfg.volPauseMs,
+        },
+        "Vol spike — entering pause",
+      );
+      return this.cancel(snap.coin, `vol_spike (ratio=${ratio.toFixed(2)})`, "cancelled_vol_pause");
     }
 
     const prices = this.computePrices(snap, ctx, position);

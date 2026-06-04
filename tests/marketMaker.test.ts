@@ -19,6 +19,10 @@ const baseCfg = {
   minEdgeBps: -3,
   obiWeight: 0.5,
   invFlatWeight: 0.6,
+  volSpikeMultiplier: 3,
+  volSpikeShortBars: 5,
+  volSpikeBaselineBars: 30,
+  volPauseMs: 60_000,
 };
 
 function book(coin = "HYPE"): OrderbookSnapshot {
@@ -135,5 +139,72 @@ describe("MarketMaker inventory flat-bias", () => {
     const mm = new MarketMaker(baseCfg, log);
     const cmd = mm.onBook(book(), ctx(), posShort(5)); // 25% util
     expect(cmd.kind).toBe("place"); // should still quote
+  });
+});
+
+describe("MarketMaker vol spike pause", () => {
+  function bookAt(coin: string, mid: number, ts: number): OrderbookSnapshot {
+    return {
+      coin,
+      bids: [{ price: mid - 0.005, size: 10 }, { price: mid - 0.006, size: 5 }, { price: mid - 0.007, size: 5 }],
+      asks: [{ price: mid + 0.005, size: 10 }, { price: mid + 0.006, size: 5 }, { price: mid + 0.007, size: 5 }],
+      timestamp: ts,
+    };
+  }
+
+  it("does NOT pause when vol is stable", () => {
+    const mm = new MarketMaker(baseCfg, log);
+    // 50 stable bars
+    for (let i = 0; i < 50; i++) {
+      mm.onBook(bookAt("BTC", 100 + Math.sin(i) * 0.0001, i * 100), ctx(), undefined);
+    }
+    const cmd = mm.onBook(bookAt("BTC", 100, 5000), ctx(), undefined);
+    expect(cmd.outcome).not.toBe("cancelled_vol_pause");
+  });
+
+  it("pauses when vol spikes (short window 3x baseline)", () => {
+    const mm = new MarketMaker(baseCfg, log);
+    // 40 calm bars
+    for (let i = 0; i < 40; i++) {
+      mm.onBook(bookAt("BTC", 100 + Math.sin(i) * 0.0005, i * 100), ctx(), undefined);
+    }
+    // 5 spike bars (large jumps)
+    mm.onBook(bookAt("BTC", 110, 4000), ctx(), undefined);
+    mm.onBook(bookAt("BTC", 95, 4100), ctx(), undefined);
+    mm.onBook(bookAt("BTC", 108, 4200), ctx(), undefined);
+    mm.onBook(bookAt("BTC", 93, 4300), ctx(), undefined);
+    const cmd = mm.onBook(bookAt("BTC", 107, 4400), ctx(), undefined);
+    expect(cmd.outcome).toBe("cancelled_vol_pause");
+  });
+
+  it("stays paused for full pauseMs window after spike", () => {
+    const mm = new MarketMaker({ ...baseCfg, volPauseMs: 60_000 }, log);
+    // Warm up + spike
+    for (let i = 0; i < 40; i++) {
+      mm.onBook(bookAt("BTC", 100 + Math.sin(i) * 0.0005, i * 100), ctx(), undefined);
+    }
+    for (let i = 0; i < 5; i++) {
+      mm.onBook(bookAt("BTC", 100 + (i % 2 === 0 ? 10 : -10), 4000 + i * 100), ctx(), undefined);
+    }
+    // Within pause window — should still be paused even with stable book
+    const cmd = mm.onBook(bookAt("BTC", 100, 4500), ctx(), undefined);
+    expect(cmd.outcome).toBe("cancelled_vol_pause");
+  });
+
+  it("resumes quoting after pauseMs elapsed", () => {
+    const mm = new MarketMaker({ ...baseCfg, volPauseMs: 1000 }, log);
+    for (let i = 0; i < 40; i++) {
+      mm.onBook(bookAt("BTC", 100 + Math.sin(i) * 0.0005, i * 100), ctx(), undefined);
+    }
+    // Spike at ts=4000
+    for (let i = 0; i < 5; i++) {
+      mm.onBook(bookAt("BTC", 100 + (i % 2 === 0 ? 10 : -10), 4000 + i * 100), ctx(), undefined);
+    }
+    // After pause window (1000ms) — with stable inputs to dilute spike vol
+    for (let i = 0; i < 10; i++) {
+      mm.onBook(bookAt("BTC", 100, 6000 + i * 100), ctx(), undefined);
+    }
+    const cmd = mm.onBook(bookAt("BTC", 100, 8000), ctx(), undefined);
+    expect(cmd.outcome).not.toBe("cancelled_vol_pause");
   });
 });

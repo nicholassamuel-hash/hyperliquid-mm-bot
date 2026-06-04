@@ -49,6 +49,10 @@ async function main() {
       minEdgeBps: cfg.MIN_EDGE_BPS,
       obiWeight: cfg.OBI_WEIGHT,
       invFlatWeight: cfg.INV_FLAT_WEIGHT,
+      volSpikeMultiplier: cfg.VOL_SPIKE_MULTIPLIER,
+      volSpikeShortBars: cfg.VOL_SPIKE_SHORT_BARS,
+      volSpikeBaselineBars: cfg.VOL_SPIKE_BASELINE_BARS,
+      volPauseMs: cfg.VOL_PAUSE_MS,
     },
     log,
   );

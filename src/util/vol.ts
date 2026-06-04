@@ -39,19 +39,64 @@ export class VolTracker {
   /**
    * Standard deviation of mid changes, expressed as basis points of mean.
    * Returns 0 if window not warm yet.
+   *
+   * @param window Optional. Use only last N mids (for short-window vol).
+   *               Defaults to all buffered mids (long-window).
    */
-  stddevBps(): number {
-    if (this.mids.length < 2) return 0;
-    const mean = this.mean();
+  stddevBps(window?: number): number {
+    const sample =
+      window !== undefined && window > 0 && window < this.mids.length
+        ? this.mids.slice(-window)
+        : this.mids;
+    if (sample.length < 2) return 0;
+    let sum = 0;
+    for (const m of sample) sum += m;
+    const mean = sum / sample.length;
     if (mean === 0) return 0;
     let sumSq = 0;
-    for (let i = 1; i < this.mids.length; i++) {
-      const delta = this.mids[i]! - this.mids[i - 1]!;
+    for (let i = 1; i < sample.length; i++) {
+      const delta = sample[i]! - sample[i - 1]!;
       sumSq += delta * delta;
     }
-    const variance = sumSq / (this.mids.length - 1);
+    const variance = sumSq / (sample.length - 1);
     const std = Math.sqrt(variance);
     return (std / mean) * 10_000; // bps
+  }
+
+  /**
+   * Detect vol spike: ratio of recent short-window vol to PRE-SPIKE baseline.
+   *
+   * Important: baseline window uses bars BEFORE the short window so the
+   * baseline is not contaminated by the spike itself. This gives clean ratio
+   * detection: short=last 5 bars, baseline=30 bars preceding those 5.
+   *
+   * Requires buffer of at least (shortWindow + baselineWindow) bars.
+   * Returns 0 if not enough history or baseline vol is 0.
+   */
+  spikeRatio(shortWindow = 5, baselineWindow = 30): number {
+    const needed = shortWindow + baselineWindow;
+    if (this.mids.length < needed) return 0;
+    const shortSample = this.mids.slice(-shortWindow);
+    const baselineSample = this.mids.slice(-needed, -shortWindow);
+    const shortStd = this._stdBpsOf(shortSample);
+    const baselineStd = this._stdBpsOf(baselineSample);
+    if (baselineStd === 0) return 0;
+    return shortStd / baselineStd;
+  }
+
+  private _stdBpsOf(sample: number[]): number {
+    if (sample.length < 2) return 0;
+    let sum = 0;
+    for (const m of sample) sum += m;
+    const mean = sum / sample.length;
+    if (mean === 0) return 0;
+    let sumSq = 0;
+    for (let i = 1; i < sample.length; i++) {
+      const delta = sample[i]! - sample[i - 1]!;
+      sumSq += delta * delta;
+    }
+    const variance = sumSq / (sample.length - 1);
+    return (Math.sqrt(variance) / mean) * 10_000;
   }
 
   /** Log-return based stddev in bps, annualized would need more context. */

@@ -68,6 +68,7 @@ function main() {
   const placed = outc.placed ?? 0;
   const cancelledAdverse = outc.cancelled_adverse ?? 0;
   const cancelledSkip = outc.cancelled_skip ?? 0;
+  const cancelledVolPause = outc.cancelled_vol_pause ?? 0;
 
   console.log(bold("📊 ACTIVITY"));
   console.log(`  Quote pairs placed:       ${String(placed).padStart(10)}`);
@@ -76,6 +77,9 @@ function main() {
   );
   console.log(
     `  Cancelled (skip):         ${String(cancelledSkip).padStart(10)}  ${dim("[edge gate / inventory cap]")}`,
+  );
+  console.log(
+    `  Cancelled (vol pause):    ${String(cancelledVolPause).padStart(10)}  ${cyan("[chaos avoidance]")}`,
   );
 
   const adverseRate = placed > 0 ? (cancelledAdverse / placed) * 100 : 0;
