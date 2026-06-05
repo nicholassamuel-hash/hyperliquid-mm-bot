@@ -4,6 +4,32 @@
 import "dotenv/config";
 import { z } from "zod";
 
+/**
+ * Parse a per-coin quote-size map from env.
+ * Format: "BTC:2,ETH:1.5,SOL:2" → { BTC: 2, ETH: 1.5, SOL: 2 }.
+ * Coin keys are upper-cased. Empty string → {}. Throws on malformed entries
+ * (bad shape, empty coin, non-positive/non-finite size) so config fails fast.
+ */
+export function parseCoinSizeMap(raw: string): Record<string, number> {
+  const map: Record<string, number> = {};
+  const trimmed = raw.trim();
+  if (trimmed === "") return map;
+  for (const part of trimmed.split(",")) {
+    const seg = part.trim();
+    if (seg === "") continue;
+    const idx = seg.indexOf(":");
+    if (idx === -1) throw new Error(`Invalid entry "${seg}" (expected COIN:SIZE)`);
+    const coin = seg.slice(0, idx).trim().toUpperCase();
+    const val = Number(seg.slice(idx + 1).trim());
+    if (coin === "") throw new Error(`Empty coin in "${seg}"`);
+    if (!Number.isFinite(val) || val <= 0) {
+      throw new Error(`Invalid size for ${coin} in "${seg}" (must be a number > 0)`);
+    }
+    map[coin] = val;
+  }
+  return map;
+}
+
 const schema = z.object({
   COINS: z
     .string()
@@ -24,6 +50,23 @@ const schema = z.object({
   VOL_MULTIPLIER: z.coerce.number().min(0.1).default(1.5),
 
   QUOTE_SIZE_USD: z.coerce.number().min(0.1).default(0.5),
+  /**
+   * Per-coin quote-size overrides (USD), format "BTC:2,ETH:2,SOL:2,HYPE:1.5".
+   * Falls back to QUOTE_SIZE_USD for any coin not listed. Lets expensive coins
+   * (BTC/ETH) clear their min size — a single QUOTE_SIZE_USD floors to 0 once
+   * price is high enough (e.g. $0.5/BTC rounds below min above ~$100k).
+   */
+  QUOTE_SIZE_USD_BY_COIN: z
+    .string()
+    .default("")
+    .transform((s, ctx) => {
+      try {
+        return parseCoinSizeMap(s);
+      } catch (e) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: (e as Error).message });
+        return z.NEVER;
+      }
+    }),
   MAX_POSITION_USD: z.coerce.number().min(1).default(20),
   MAX_MARGIN_USD: z.coerce.number().min(1).default(15),
   REPLACE_COOLDOWN_MS: z.coerce.number().min(50).default(200),

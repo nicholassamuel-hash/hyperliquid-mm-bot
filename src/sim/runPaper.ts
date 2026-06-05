@@ -35,6 +35,7 @@ async function main() {
       replaceCooldownMs: cfg.REPLACE_COOLDOWN_MS,
       adverseThresholdBpsMin: cfg.ADVERSE_THRESHOLD_BPS_MIN,
       quoteSizeUsd: cfg.QUOTE_SIZE_USD,
+      quoteSizeUsdByCoin: cfg.QUOTE_SIZE_USD_BY_COIN,
       fundingSkewThreshold: cfg.FUNDING_SKEW_THRESHOLD,
       minEdgeBps: cfg.MIN_EDGE_BPS,
       obiWeight: cfg.OBI_WEIGHT,

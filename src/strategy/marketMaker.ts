@@ -49,8 +49,13 @@ export interface MMConfig {
   replaceCooldownMs: number;
   /** Adverse threshold floor in bps. */
   adverseThresholdBpsMin: number;
-  /** Quote size per side in USD notional. */
+  /** Quote size per side in USD notional (fallback when no per-coin override). */
   quoteSizeUsd: number;
+  /**
+   * Optional per-coin quote-size overrides (USD). Falls back to quoteSizeUsd.
+   * Lets expensive coins clear their min size where a single size would floor to 0.
+   */
+  quoteSizeUsdByCoin?: Record<string, number>;
   /** Funding rate threshold for skew (per hour). */
   fundingSkewThreshold: number;
   /** Quoting mode. */
@@ -98,6 +103,12 @@ export class MarketMaker {
     private readonly log: Logger,
   ) {
     this.adverse = new AdverseGuard(cfg.adverseThresholdBpsMin);
+  }
+
+  /** Resolve quote size (USD) for a coin — per-coin override or global fallback. */
+  private quoteSizeFor(coin: string): number {
+    const override = this.cfg.quoteSizeUsdByCoin?.[coin];
+    return override !== undefined ? override : this.cfg.quoteSizeUsd;
   }
 
   private getVol(coin: string): VolTracker {
@@ -294,8 +305,9 @@ export class MarketMaker {
     const szDecimals = ctx?.szDecimals ?? 4;
     const minSz = ctx?.minSz ?? Math.pow(10, -szDecimals);
 
-    let bidSize = roundSize(this.cfg.quoteSizeUsd / bid, szDecimals);
-    let askSize = roundSize(this.cfg.quoteSizeUsd / ask, szDecimals);
+    const quoteSizeUsd = this.quoteSizeFor(snap.coin);
+    let bidSize = roundSize(quoteSizeUsd / bid, szDecimals);
+    let askSize = roundSize(quoteSizeUsd / ask, szDecimals);
 
     if (bidSize < minSz) bidSize = 0;
     if (askSize < minSz) askSize = 0;

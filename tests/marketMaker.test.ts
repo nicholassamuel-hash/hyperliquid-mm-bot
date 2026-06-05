@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { MarketMaker } from "../src/strategy/marketMaker.js";
 import { createLogger } from "../src/util/logger.js";
 import type { OrderbookSnapshot, MarketContext, Position } from "../src/types.js";
+import { roundSize } from "../src/util/math.js";
 
 const log = createLogger("error");
 
@@ -206,5 +207,33 @@ describe("MarketMaker vol spike pause", () => {
     }
     const cmd = mm.onBook(bookAt("BTC", 100, 8000), ctx(), undefined);
     expect(cmd.outcome).not.toBe("cancelled_vol_pause");
+  });
+});
+
+describe("MarketMaker per-coin quote size", () => {
+  // book() bids[0] = 73.243; join mode quotes at bestBid, so
+  // bidSize = roundSize(quoteSize / 73.243, szDecimals=2).
+  const bid0 = 73.243;
+
+  it("uses the per-coin override when the coin is in the map", () => {
+    const mm = new MarketMaker({ ...baseCfg, quoteSizeUsdByCoin: { HYPE: 2 } }, log);
+    const cmd = mm.onBook(book("HYPE"), ctx(), undefined);
+    expect(cmd.kind).toBe("place");
+    expect(cmd.quote!.bidSize).toBeCloseTo(roundSize(2 / bid0, 2));
+    expect(cmd.quote!.bidSize).toBeCloseTo(0.03); // vs 0.01 at the $0.5 fallback
+  });
+
+  it("falls back to quoteSizeUsd for a coin not in the map", () => {
+    const mm = new MarketMaker({ ...baseCfg, quoteSizeUsdByCoin: { BTC: 5 } }, log);
+    const cmd = mm.onBook(book("HYPE"), ctx(), undefined);
+    expect(cmd.kind).toBe("place");
+    expect(cmd.quote!.bidSize).toBeCloseTo(roundSize(baseCfg.quoteSizeUsd / bid0, 2));
+  });
+
+  it("falls back to quoteSizeUsd when no map is provided (back-compat)", () => {
+    const mm = new MarketMaker(baseCfg, log);
+    const cmd = mm.onBook(book("HYPE"), ctx(), undefined);
+    expect(cmd.kind).toBe("place");
+    expect(cmd.quote!.bidSize).toBeCloseTo(roundSize(baseCfg.quoteSizeUsd / bid0, 2));
   });
 });
