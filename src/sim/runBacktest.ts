@@ -44,6 +44,7 @@ async function main() {
       maxMarginUsd: cfg.MAX_MARGIN_USD,
       replaceCooldownMs: cfg.REPLACE_COOLDOWN_MS,
       adverseThresholdBpsMin: cfg.ADVERSE_THRESHOLD_BPS_MIN,
+      adverseStaleToleranceBps: cfg.ADVERSE_STALE_TOLERANCE_BPS,
       quoteSizeUsd: cfg.QUOTE_SIZE_USD,
       quoteSizeUsdByCoin: cfg.QUOTE_SIZE_USD_BY_COIN,
       fundingSkewThreshold: cfg.FUNDING_SKEW_THRESHOLD,

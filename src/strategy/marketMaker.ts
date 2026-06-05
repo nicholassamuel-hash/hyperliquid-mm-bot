@@ -47,8 +47,13 @@ export interface MMConfig {
   maxMarginUsd: number;
   /** Cancel/replace cooldown (ms). */
   replaceCooldownMs: number;
-  /** Adverse threshold floor in bps. */
+  /** Adverse threshold floor in bps (drift early-warning band). */
   adverseThresholdBpsMin: number;
+  /**
+   * Bps the opposite touch must move past our quote before cancelling as stale.
+   * 0 = legacy twitchy guard (+ drift). >0 = relaxed, drift off (suits join mode).
+   */
+  adverseStaleToleranceBps?: number;
   /** Quote size per side in USD notional (fallback when no per-coin override). */
   quoteSizeUsd: number;
   /**
@@ -102,7 +107,7 @@ export class MarketMaker {
     private readonly cfg: MMConfig,
     private readonly log: Logger,
   ) {
-    this.adverse = new AdverseGuard(cfg.adverseThresholdBpsMin);
+    this.adverse = new AdverseGuard(cfg.adverseThresholdBpsMin, cfg.adverseStaleToleranceBps ?? 0);
   }
 
   /** Resolve quote size (USD) for a coin — per-coin override or global fallback. */

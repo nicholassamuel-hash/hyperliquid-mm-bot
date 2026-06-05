@@ -72,6 +72,14 @@ const schema = z.object({
   REPLACE_COOLDOWN_MS: z.coerce.number().min(50).default(200),
 
   ADVERSE_THRESHOLD_BPS_MIN: z.coerce.number().min(0.5).default(1.5),
+  /**
+   * Bps the opposite touch must move PAST our quote before we cancel as stale.
+   * 0 = twitchy legacy guard (cancels on first touch + drift early-warning) —
+   * in join mode that fires on ~every tick → ~80% adverse rate, starved fills.
+   * >0 (e.g. 2) lets quotes rest through normal oscillation and disables the
+   * drift check (which over-fires when threshold >> natural spread).
+   */
+  ADVERSE_STALE_TOLERANCE_BPS: z.coerce.number().min(0).default(0),
   FUNDING_SKEW_THRESHOLD: z.coerce.number().min(0).default(0.0001),
 
   /** Min edge in bps after fees needed to bother quoting. */

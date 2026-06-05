@@ -44,3 +44,24 @@ describe("AdverseGuard (perp, bps)", () => {
     expect(g.check(undefined, event(60000, 60010))).toBeNull();
   });
 });
+
+describe("AdverseGuard stale tolerance (relaxed join-mode guard)", () => {
+  it("ignores a touch within tolerance and skips drift", () => {
+    // tol 3 bps ≈ 18 USD @ mid 60000. bestBid 60010 is only +5 past ask 60005 →
+    // within tolerance → no stale; drift disabled because tolerance > 0 → null.
+    const g = new AdverseGuard(3, 3);
+    expect(g.check(quote(), event(60010, 60015))).toBeNull();
+  });
+
+  it("flags a touch that penetrates beyond tolerance", () => {
+    // tol 0.5 bps ≈ 3 USD. bestBid 60010 is +5 past ask 60005 → beyond → stale.
+    const g = new AdverseGuard(3, 0.5);
+    expect(g.check(quote(), event(60010, 60015))?.reason).toBe("ask_moved_up");
+  });
+
+  it("default tolerance (0) keeps legacy twitchy behavior", () => {
+    // No tolerance arg → cancels the instant the touch reaches our ask.
+    const g = new AdverseGuard(3);
+    expect(g.check(quote(), event(60005, 60015))?.reason).toBe("ask_moved_up");
+  });
+});
