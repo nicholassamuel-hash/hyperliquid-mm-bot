@@ -99,6 +99,32 @@ const schema = z.object({
   /** Pause duration (ms) after spike detection. */
   VOL_PAUSE_MS: z.coerce.number().int().min(1000).default(60_000),
 
+  // --- Auction reversion strategy (npm run auction) ---
+  /** Position size per trade in USD (taker entries). */
+  AUCTION_SIZE_USD: z.coerce.number().min(0.1).default(5),
+  /** Which σ band marks the value-area edge to fade (1 or 2). */
+  AUCTION_BAND_K: z.coerce.number().int().min(1).max(2).default(2),
+  /** Trade-bar interval (ms) for signal aggregation. */
+  AUCTION_BAR_MS: z.coerce.number().int().min(1000).default(60_000),
+  /** Rolling VWAP/band window length in bars. */
+  AUCTION_WINDOW_BARS: z.coerce.number().int().min(10).default(240),
+  /** Completed bars required before trading. */
+  AUCTION_WARM_BARS: z.coerce.number().int().min(2).default(30),
+  /** RVOL above this = acceptance → do not fade. */
+  AUCTION_RVOL_ACCEPT_MAX: z.coerce.number().min(1).default(1.8),
+  /** Min |recentDelta| in reversal direction to confirm (0 = sign only). */
+  AUCTION_DELTA_CONFIRM: z.coerce.number().min(0).default(0),
+  /** Min |OBI| in reversal direction as alternative confirmation. */
+  AUCTION_OBI_CONFIRM: z.coerce.number().min(0).max(1).default(0.15),
+  /** Stop placed this many σ beyond entry. */
+  AUCTION_STOP_SIGMA: z.coerce.number().min(0.1).default(1),
+  /** Time stop (ms) for an open position. */
+  AUCTION_MAX_HOLD_MS: z.coerce.number().int().min(10_000).default(1_800_000),
+  /** Cooldown (ms) after an exit before re-entry. */
+  AUCTION_COOLDOWN_MS: z.coerce.number().int().min(0).default(60_000),
+  /** RVOL against an open position above this = acceptance, cut. */
+  AUCTION_RVOL_FAIL_EXIT: z.coerce.number().min(1).default(2.5),
+
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });
 

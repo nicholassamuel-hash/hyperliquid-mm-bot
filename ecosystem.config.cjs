@@ -33,5 +33,20 @@ module.exports = {
         NODE_ENV: "production",
       },
     },
+    {
+      name: "auction",
+      script: "dist/sim/runAuction.js",
+      cwd: __dirname,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: 30000,
+      max_memory_restart: "300M",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+      error_file: "logs/auction-error.log",
+      out_file: "logs/auction-out.log",
+      env: {
+        NODE_ENV: "production",
+      },
+    },
   ],
 };
