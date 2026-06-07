@@ -123,7 +123,11 @@ const schema = z.object({
   /** Cooldown (ms) after an exit before re-entry. */
   AUCTION_COOLDOWN_MS: z.coerce.number().int().min(0).default(60_000),
   /** RVOL against an open position above this = acceptance, cut. */
-  AUCTION_RVOL_FAIL_EXIT: z.coerce.number().min(1).default(2.5),
+  AUCTION_RVOL_FAIL_EXIT: z.coerce.number().min(1).default(3),
+  /** Grace period (ms) after entry before the acceptance-against cut may fire. */
+  AUCTION_EXIT_GRACE_MS: z.coerce.number().int().min(0).default(120_000),
+  /** Take-profit at this fraction of the reversion toward VWAP (1 = full VWAP). */
+  AUCTION_TARGET_REVERSION: z.coerce.number().min(0.1).max(1).default(0.6),
 
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });

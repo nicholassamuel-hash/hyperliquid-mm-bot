@@ -49,9 +49,12 @@ async function main() {
     maxHoldMs: cfg.AUCTION_MAX_HOLD_MS,
     cooldownMs: cfg.AUCTION_COOLDOWN_MS,
     rvolFailExit: cfg.AUCTION_RVOL_FAIL_EXIT,
+    exitGraceMs: cfg.AUCTION_EXIT_GRACE_MS,
+    targetReversion: cfg.AUCTION_TARGET_REVERSION,
   });
   const inventory = new Inventory();
   const db = new StateDB("data/auction.db");
+  const exitReasons = new Map<string, number>(); // running tally for telemetry
 
   const signals = new Map<string, AuctionSignals>();
   const sigFor = (coin: string): AuctionSignals => {
@@ -116,6 +119,9 @@ async function main() {
 
     const newPos = inventory.apply(fill);
     db.recordFill(fill);
+    if (intent.action === "exit") {
+      exitReasons.set(intent.reason, (exitReasons.get(intent.reason) ?? 0) + 1);
+    }
     log.info(
       {
         coin: snap.coin,
@@ -151,6 +157,7 @@ async function main() {
         realized: Number(realized.toFixed(4)),
         unrealized: Number(unreal.toFixed(4)),
         net: Number((realized + unreal).toFixed(4)),
+        exits: Object.fromEntries(exitReasons),
       },
       "Auction periodic stats",
     );

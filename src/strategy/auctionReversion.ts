@@ -47,6 +47,10 @@ export interface AuctionConfig {
   cooldownMs: number;
   /** If in-position and RVOL spikes >= this AGAINST us → acceptance, cut. */
   rvolFailExit: number;
+  /** Grace period (ms) after entry before the acceptance-against cut may fire. */
+  exitGraceMs: number;
+  /** Take-profit fraction of the reversion toward VWAP (1 = full VWAP). */
+  targetReversion: number;
 }
 
 interface PosState {
@@ -92,17 +96,26 @@ export class AuctionReversion {
   ): AuctionIntent {
     const rvol = signals.rvol();
     const delta = signals.recentDelta();
+    // Take-profit at a fraction of the way back to current fair value (VWAP).
+    // From a 2σ extreme, full mean-reversion to VWAP is rare; capturing ~60%
+    // of it converts far more trades into wins. (entry < vwap for longs and
+    // entry > vwap for shorts, so this floats correctly for both sides.)
+    const target = st.entry + this.cfg.targetReversion * (vwap - st.entry);
+    // The acceptance-against cut only fires AFTER a grace period (so we don't
+    // bail on the residual flow that produced the entry) AND only while the
+    // position is not yet in profit (a volume spike in our favour isn't a cut).
+    const graceOver = nowTs - st.entryTs >= this.cfg.exitGraceMs;
 
     if (st.side === "LONG") {
-      if (price >= vwap) return this.exit(coin, "LONG", "target: reverted to VWAP", nowTs);
+      if (price >= target) return this.exit(coin, "LONG", "target reached", nowTs);
       if (price <= st.stop) return this.exit(coin, "LONG", "stop", nowTs);
-      if (rvol >= this.cfg.rvolFailExit && delta < 0) {
+      if (graceOver && price <= st.entry && rvol >= this.cfg.rvolFailExit && delta < 0) {
         return this.exit(coin, "LONG", "acceptance against (breakdown)", nowTs);
       }
     } else {
-      if (price <= vwap) return this.exit(coin, "SHORT", "target: reverted to VWAP", nowTs);
+      if (price <= target) return this.exit(coin, "SHORT", "target reached", nowTs);
       if (price >= st.stop) return this.exit(coin, "SHORT", "stop", nowTs);
-      if (rvol >= this.cfg.rvolFailExit && delta > 0) {
+      if (graceOver && price >= st.entry && rvol >= this.cfg.rvolFailExit && delta > 0) {
         return this.exit(coin, "SHORT", "acceptance against (breakout)", nowTs);
       }
     }

@@ -11,6 +11,8 @@ const cfg: AuctionConfig = {
   maxHoldMs: 30 * 60_000,
   cooldownMs: 60_000,
   rvolFailExit: 2.5,
+  exitGraceMs: 0,
+  targetReversion: 1,
 };
 
 // Stub signals: vwap=100, sd=5 → upper2=110, lower2=90, upper1=105, lower1=95.
@@ -96,7 +98,7 @@ describe("AuctionReversion exits", () => {
     const i = s.onUpdate("BTC", 101, fakeSignals({ rvol: 1.0, delta: 0 }), 0, 2000);
     expect(i.action).toBe("exit");
     expect(i.side).toBe("SELL");
-    expect(i.reason).toContain("VWAP");
+    expect(i.reason).toContain("target");
     expect(s.getState("BTC")).toBeUndefined();
   });
 
@@ -141,5 +143,37 @@ describe("AuctionReversion exits", () => {
     const i = s.onUpdate("BTC", 95, fakeSignals({ rvol: 1.0, delta: 0 }), 0, 1000 + 30 * 60_000);
     expect(i.action).toBe("exit");
     expect(i.reason).toBe("time stop");
+  });
+});
+
+describe("AuctionReversion v2 tuning (grace / partial target / profit gate)", () => {
+  it("partial target: exits at the configured reversion fraction, not full VWAP", () => {
+    // vwap=100, entry=89 → target = 89 + 0.6*(100-89) = 95.6
+    const s = new AuctionReversion({ ...cfg, targetReversion: 0.6 });
+    s.onUpdate("BTC", 89, fakeSignals({ rvol: 1, delta: 1 }), 0, 1000);
+    expect(s.onUpdate("BTC", 95, fakeSignals({ rvol: 1, delta: 0 }), 0, 2000).action).toBe("hold");
+    const i = s.onUpdate("BTC", 96, fakeSignals({ rvol: 1, delta: 0 }), 0, 3000);
+    expect(i.action).toBe("exit");
+    expect(i.reason).toContain("target");
+  });
+
+  it("grace period: suppresses the acceptance-against cut right after entry", () => {
+    const s = new AuctionReversion({ ...cfg, exitGraceMs: 120_000 });
+    s.onUpdate("BTC", 111, fakeSignals({ rvol: 1, delta: -1 }), 0, 1000); // short
+    // strong adverse spike WITHIN grace → must NOT cut
+    const within = s.onUpdate("BTC", 112, fakeSignals({ rvol: 3, delta: 10 }), 0, 2000);
+    expect(within.action).toBe("hold");
+    // same spike AFTER grace → cut
+    const after = s.onUpdate("BTC", 112, fakeSignals({ rvol: 3, delta: 10 }), 0, 1000 + 130_000);
+    expect(after.action).toBe("exit");
+    expect(after.reason).toContain("acceptance against");
+  });
+
+  it("profit gate: does not cut a position that is already in profit", () => {
+    const s = new AuctionReversion({ ...cfg, exitGraceMs: 0 });
+    s.onUpdate("BTC", 89, fakeSignals({ rvol: 1, delta: 1 }), 0, 1000); // long, entry 89
+    // price 94 = in profit (< target 100), strong selling spike → profit gate blocks the cut
+    const i = s.onUpdate("BTC", 94, fakeSignals({ rvol: 3, delta: -10 }), 0, 2000);
+    expect(i.action).toBe("hold");
   });
 });
