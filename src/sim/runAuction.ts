@@ -51,6 +51,8 @@ async function main() {
     rvolFailExit: cfg.AUCTION_RVOL_FAIL_EXIT,
     exitGraceMs: cfg.AUCTION_EXIT_GRACE_MS,
     targetReversion: cfg.AUCTION_TARGET_REVERSION,
+    useDivergence: cfg.AUCTION_USE_DIVERGENCE,
+    divergenceBars: cfg.AUCTION_DIVERGENCE_BARS,
   });
   const inventory = new Inventory();
   const db = new StateDB("data/auction.db");

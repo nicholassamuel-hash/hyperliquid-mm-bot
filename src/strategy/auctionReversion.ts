@@ -51,6 +51,10 @@ export interface AuctionConfig {
   exitGraceMs: number;
   /** Take-profit fraction of the reversion toward VWAP (1 = full VWAP). */
   targetReversion: number;
+  /** Require CVD/price divergence as the entry confirmation (stricter). */
+  useDivergence: boolean;
+  /** Lookback bars for the divergence check. */
+  divergenceBars: number;
 }
 
 interface PosState {
@@ -142,10 +146,25 @@ export class AuctionReversion {
     const rvol = signals.rvol();
     const delta = signals.recentDelta();
 
+    // CVD/price divergence (when enabled): over the lookback, price moved one way
+    // while aggressor CVD moved the other → absorption → reversal confirmation.
+    // "delta minus + harga naik = short" and the mirror for long.
+    let bearishDiv = false;
+    let bullishDiv = false;
+    if (this.cfg.useDivergence) {
+      const priceAgo = signals.priceNBarsAgo(this.cfg.divergenceBars);
+      const cvdChange = signals.recentDelta(this.cfg.divergenceBars);
+      const priceChange = priceAgo > 0 ? price - priceAgo : 0;
+      bearishDiv = priceChange > 0 && cvdChange < 0; // price up, CVD down → short
+      bullishDiv = priceChange < 0 && cvdChange > 0; // price down, CVD up → long
+    }
+
     // Stretched ABOVE value → candidate SHORT fade
     if (price >= upper) {
       if (rvol > this.cfg.rvolAcceptMax) return hold("acceptance up — no fade (Law 3)");
-      const sellersIn = delta <= -this.cfg.deltaConfirm || obi <= -this.cfg.obiConfirm;
+      const sellersIn = this.cfg.useDivergence
+        ? bearishDiv
+        : delta <= -this.cfg.deltaConfirm || obi <= -this.cfg.obiConfirm;
       if (!sellersIn) return hold("no reversal confirm (short)");
       const stop = price + this.cfg.stopSigma * b.sd;
       this.state.set(coin, { side: "SHORT", entry: price, stop, entryTs: nowTs });
@@ -155,7 +174,9 @@ export class AuctionReversion {
     // Stretched BELOW value → candidate LONG fade
     if (price <= lower) {
       if (rvol > this.cfg.rvolAcceptMax) return hold("acceptance down — no fade (Law 3)");
-      const buyersIn = delta >= this.cfg.deltaConfirm || obi >= this.cfg.obiConfirm;
+      const buyersIn = this.cfg.useDivergence
+        ? bullishDiv
+        : delta >= this.cfg.deltaConfirm || obi >= this.cfg.obiConfirm;
       if (!buyersIn) return hold("no reversal confirm (long)");
       const stop = price - this.cfg.stopSigma * b.sd;
       this.state.set(coin, { side: "LONG", entry: price, stop, entryTs: nowTs });

@@ -165,4 +165,16 @@ export class AuctionSignals {
   cvd(): number {
     return this.cvdTotal;
   }
+
+  /**
+   * Volume-weighted representative price of the completed bar `n` bars back
+   * (n=1 → last completed bar). 0 if not enough history. Used for the
+   * price-vs-CVD divergence check.
+   */
+  priceNBarsAgo(n: number): number {
+    const idx = this.bars.length - n;
+    if (idx < 0 || idx >= this.bars.length) return 0;
+    const b = this.bars[idx]!;
+    return b.vol > 0 ? b.pv / b.vol : 0;
+  }
 }

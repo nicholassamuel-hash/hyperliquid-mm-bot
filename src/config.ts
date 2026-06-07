@@ -128,6 +128,10 @@ const schema = z.object({
   AUCTION_EXIT_GRACE_MS: z.coerce.number().int().min(0).default(120_000),
   /** Take-profit at this fraction of the reversion toward VWAP (1 = full VWAP). */
   AUCTION_TARGET_REVERSION: z.coerce.number().min(0.1).max(1).default(0.6),
+  /** Use CVD/price divergence as the entry confirmation (stricter). Default off. */
+  AUCTION_USE_DIVERGENCE: z.string().default("false").transform((s) => s.toLowerCase() === "true"),
+  /** Lookback bars for the price-vs-CVD divergence check. */
+  AUCTION_DIVERGENCE_BARS: z.coerce.number().int().min(2).default(5),
 
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });

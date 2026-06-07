@@ -91,3 +91,16 @@ describe("AuctionSignals warm-up", () => {
     expect(s.warm()).toBe(true);
   });
 });
+
+describe("AuctionSignals priceNBarsAgo", () => {
+  it("returns the representative price of a past completed bar", () => {
+    const s = sig();
+    s.pushTrade(100, 1, "BUY", 0);
+    s.pushTrade(110, 1, "BUY", 1000); // finalize bar0 @100
+    s.pushTrade(120, 1, "BUY", 2000); // finalize bar1 @110
+    s.pushTrade(130, 1, "BUY", 3000); // finalize bar2 @120 → bars [100,110,120]
+    expect(s.priceNBarsAgo(1)).toBeCloseTo(120); // last completed
+    expect(s.priceNBarsAgo(3)).toBeCloseTo(100); // 3 back
+    expect(s.priceNBarsAgo(99)).toBe(0); // not enough history
+  });
+});

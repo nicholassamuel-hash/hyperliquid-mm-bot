@@ -13,6 +13,8 @@ const cfg: AuctionConfig = {
   rvolFailExit: 2.5,
   exitGraceMs: 0,
   targetReversion: 1,
+  useDivergence: false,
+  divergenceBars: 5,
 };
 
 // Stub signals: vwap=100, sd=5 → upper2=110, lower2=90, upper1=105, lower1=95.
@@ -22,6 +24,7 @@ function fakeSignals(o: {
   sd?: number;
   rvol: number;
   delta: number;
+  priceAgo?: number;
 }): AuctionSignals {
   const vwap = o.vwap ?? 100;
   const sd = o.sd ?? 5;
@@ -32,6 +35,7 @@ function fakeSignals(o: {
     cvd: () => 0,
     vwap: () => vwap,
     sd: () => sd,
+    priceNBarsAgo: () => o.priceAgo ?? vwap,
     bands: () => ({
       vwap,
       sd,
@@ -175,5 +179,30 @@ describe("AuctionReversion v2 tuning (grace / partial target / profit gate)", ()
     // price 94 = in profit (< target 100), strong selling spike → profit gate blocks the cut
     const i = s.onUpdate("BTC", 94, fakeSignals({ rvol: 3, delta: -10 }), 0, 2000);
     expect(i.action).toBe("hold");
+  });
+});
+
+describe("AuctionReversion divergence mode (opt-in)", () => {
+  const dc = { ...cfg, useDivergence: true, divergenceBars: 3 };
+
+  it("shorts at VAH only on bearish divergence (price up + CVD down)", () => {
+    const s = new AuctionReversion(dc);
+    // price 111 (≥ upper2 110), priceAgo 108 (price rose) + delta −5 (CVD fell) → bearish div
+    const i = s.onUpdate("BTC", 111, fakeSignals({ rvol: 1, delta: -5, priceAgo: 108 }), 0, 1000);
+    expect(i.action).toBe("enter_short");
+  });
+
+  it("no short when CVD confirms the up-move (no divergence)", () => {
+    const s = new AuctionReversion(dc);
+    // price up (111 vs 108) AND delta +5 (CVD up too) → not a divergence → hold
+    const i = s.onUpdate("BTC", 111, fakeSignals({ rvol: 1, delta: 5, priceAgo: 108 }), 0, 1000);
+    expect(i.action).toBe("hold");
+  });
+
+  it("longs at VAL only on bullish divergence (price down + CVD up)", () => {
+    const s = new AuctionReversion(dc);
+    // price 89 (≤ lower2 90), priceAgo 92 (price fell) + delta +5 (CVD rose) → bullish div
+    const i = s.onUpdate("BTC", 89, fakeSignals({ rvol: 1, delta: 5, priceAgo: 92 }), 0, 1000);
+    expect(i.action).toBe("enter_long");
   });
 });
