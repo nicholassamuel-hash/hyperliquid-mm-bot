@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auction Bot — Live</title>
+    <style>
+      :root {
+        --bg: #0b0e14; --card: #141925; --line: #232a3a; --txt: #d6dce8;
+        --dim: #6b7488; --grn: #36d399; --red: #f1556c; --amb: #f5c518; --blu: #4aa3ff;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--bg); color: var(--txt);
+        font: 14px/1.5 -apple-system, Segoe UI, Roboto, sans-serif; }
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 20px; }
+      h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: .3px; }
+      .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; }
+      .between { justify-content: space-between; }
+      .dim { color: var(--dim); }
+      .mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+      .grn { color: var(--grn); } .red { color: var(--red); } .amb { color: var(--amb); } .blu { color: var(--blu); }
+      .hero { font-size: 40px; font-weight: 800; }
+      .stat { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+      .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--dim); }
+      .stat .v { font-size: 20px; font-weight: 700; margin-top: 2px; }
+      .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+      .chip { font-size: 11px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line);
+        color: var(--dim); background: #0e131d; }
+      .chip.on { color: #061018; background: var(--grn); border-color: var(--grn); font-weight: 700; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; margin-top: 16px; }
+      .coin { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+      .coin h2 { font-size: 16px; margin: 0; }
+      .badge { font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 700; letter-spacing: .4px; }
+      .b-range { background: #1d2433; color: var(--blu); } .b-up { background: #10301f; color: var(--grn); }
+      .b-down { background: #3a1620; color: var(--red); } .b-warm { background: #2a2410; color: var(--amb); }
+      .va { position: relative; height: 40px; margin: 16px 0 8px; }
+      .va .track { position: absolute; top: 18px; left: 0; right: 0; height: 4px; background: var(--line); border-radius: 2px; }
+      .va .vwap { position: absolute; top: 10px; width: 2px; height: 20px; background: var(--dim); }
+      .va .price { position: absolute; top: 6px; width: 3px; height: 28px; border-radius: 2px; }
+      .va .lab { position: absolute; top: 26px; font-size: 10px; color: var(--dim); transform: translateX(-50%); }
+      .va .edge { position: absolute; top: 14px; width: 2px; height: 12px; background: #3a4a6a; }
+      .sig { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 6px; }
+      .sig .s { background: #0e131d; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; text-align: center; }
+      .sig .s .k { font-size: 10px; color: var(--dim); text-transform: uppercase; }
+      .sig .s .v { font-size: 15px; font-weight: 700; margin-top: 1px; }
+      .walls { display: flex; gap: 6px; margin-top: 8px; }
+      .wall { flex: 1; text-align: center; font-size: 11px; padding: 4px; border-radius: 6px; border: 1px dashed var(--line); color: var(--dim); }
+      .wall.on { border-style: solid; }
+      .wall.bid.on { color: var(--grn); border-color: var(--grn); } .wall.ask.on { color: var(--red); border-color: var(--red); }
+      .pos { margin-top: 10px; padding: 8px 10px; border-radius: 8px; font-size: 12px; }
+      .pos.long { background: #0f2a1c; border: 1px solid #1c5238; }
+      .pos.short { background: #2c141c; border: 1px solid #5a2230; }
+      .pos.flat { background: #0e131d; border: 1px solid var(--line); color: var(--dim); }
+      .err { background: #2c141c; border: 1px solid #5a2230; color: var(--red); padding: 12px 16px; border-radius: 10px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="row between">
+        <h1>🪤 Auction Bot <span class="dim" style="font-weight:400">· AMT reversion · paper</span></h1>
+        <div class="dim mono" id="conn">connecting…</div>
+      </div>
+
+      <div id="err"></div>
+
+      <div class="row" style="margin-top:14px; align-items:flex-end;">
+        <div>
+          <div class="dim" style="font-size:12px;text-transform:uppercase;letter-spacing:.5px;">Net PnL (paper)</div>
+          <div class="hero mono" id="net">—</div>
+        </div>
+        <div class="stat"><div class="k">Realized</div><div class="v mono" id="realized">—</div></div>
+        <div class="stat"><div class="k">Unrealized</div><div class="v mono" id="unreal">—</div></div>
+        <div class="stat"><div class="k">Fills</div><div class="v mono" id="fills">—</div></div>
+        <div class="stat"><div class="k">Open</div><div class="v mono" id="open">—</div></div>
+        <div class="stat"><div class="k">Uptime</div><div class="v mono" id="uptime">—</div></div>
+      </div>
+
+      <div class="chips" id="tools"></div>
+      <div class="chips" id="exits"></div>
+
+      <div class="grid" id="coins"></div>
+      <p class="dim" style="margin-top:18px;font-size:12px;">Auto-refresh 5s · net/realized are inventory-based (this run). Decisions hold minutes–hours — sparse fills are by design.</p>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const money = (x) => (x >= 0 ? "+" : "−") + "$" + Math.abs(x).toFixed(4);
+      const cls = (x) => (x > 0 ? "grn" : x < 0 ? "red" : "dim");
+      function dur(ms) {
+        const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+      }
+      function pct(x, lo, hi) {
+        if (!(hi > lo)) return 50;
+        return Math.max(0, Math.min(100, ((x - lo) / (hi - lo)) * 100));
+      }
+
+      function render(d) {
+        if (d.error) { $("err").innerHTML = `<div class="err">⚠ ${d.error}</div>`; }
+        else $("err").innerHTML = "";
+        const g = d.global || {};
+        $("net").textContent = g.net == null ? "—" : money(g.net);
+        $("net").className = "hero mono " + cls(g.net || 0);
+        $("realized").innerHTML = g.realized == null ? "—" : `<span class="${cls(g.realized)}">${money(g.realized)}</span>`;
+        $("unreal").innerHTML = g.unrealized == null ? "—" : `<span class="${cls(g.unrealized)}">${money(g.unrealized)}</span>`;
+        $("fills").textContent = g.fills ?? "—";
+        $("open").textContent = g.openPositions ?? "—";
+        $("uptime").textContent = d.startTs ? dur(Date.now() - d.startTs) : "—";
+
+        const cfg = d.cfg || {};
+        const tools = [["MAKER","useMaker"],["DIVERGENCE","useDivergence"],["REGIME","useRegime"],["TRAPPED","useTrapped"],["WALL","useWall"],["TRAIL","useTrail"]];
+        $("tools").innerHTML = tools.map(([n,k]) => `<span class="chip ${cfg[k] ? "on" : ""}">${n}</span>`).join("");
+
+        const ex = g.exits || {};
+        $("exits").innerHTML = Object.keys(ex).length
+          ? Object.entries(ex).map(([k,v]) => `<span class="chip">${k}: <b>${v}</b></span>`).join("")
+          : `<span class="chip dim">no exits yet</span>`;
+
+        const coins = d.coins || {};
+        $("coins").innerHTML = Object.entries(coins).map(([name, c]) => coinCard(name, c)).join("")
+          || `<div class="coin dim">waiting for signals…</div>`;
+
+        const age = d.ts ? Math.round((Date.now() - d.ts) / 1000) : null;
+        $("conn").textContent = age == null ? "no data" : `updated ${age}s ago`;
+      }
+
+      function coinCard(name, c) {
+        const regime = c.regime === "up" ? "b-up" : c.regime === "down" ? "b-down" : "b-range";
+        const lo = c.lower2, hi = c.upper2;
+        const pPrice = pct(c.price, lo, hi), pVwap = pct(c.vwap, lo, hi);
+        const pU1 = pct(c.upper1, lo, hi), pL1 = pct(c.lower1, lo, hi);
+        const priceCol = c.price >= c.upper2 ? "var(--red)" : c.price <= c.lower2 ? "var(--grn)" : "var(--blu)";
+        const fsm = c.fsm
+          ? `<div class="pos ${c.fsm.side.toLowerCase()}">▶ <b>${c.fsm.side}</b> @ ${c.fsm.entry.toFixed(4)} · stop ${c.fsm.stop.toFixed(4)}${c.fsm.targetTagged ? " · 🎯 trailing (BE)" : ""}</div>`
+          : `<div class="pos flat">flat — watching</div>`;
+        return `
+          <div class="coin">
+            <div class="row between">
+              <h2>${name} <span class="dim mono" style="font-size:13px">${c.price?.toFixed(c.price > 1000 ? 1 : 4)}</span></h2>
+              <div class="row" style="gap:6px">
+                ${c.warm ? "" : '<span class="badge b-warm">WARMING</span>'}
+                <span class="badge ${regime}">${(c.regime || "range").toUpperCase()}</span>
+              </div>
+            </div>
+            <div class="va">
+              <div class="track"></div>
+              <div class="edge" style="left:${pL1}%"></div>
+              <div class="edge" style="left:${pU1}%"></div>
+              <div class="vwap" style="left:${pVwap}%"></div>
+              <div class="price" style="left:${pPrice}%; background:${priceCol}"></div>
+              <div class="lab" style="left:0">VAL</div>
+              <div class="lab" style="left:${pVwap}%">VWAP</div>
+              <div class="lab" style="left:100%">VAH</div>
+            </div>
+            <div class="sig">
+              <div class="s"><div class="k">RVOL</div><div class="v ${c.rvol > 1.8 ? "amb" : ""}">${c.rvol}</div></div>
+              <div class="s"><div class="k">Δ delta</div><div class="v ${cls(c.delta)}">${c.delta}</div></div>
+              <div class="s"><div class="k">CVD</div><div class="v ${cls(c.cvd)}">${c.cvd}</div></div>
+              <div class="s"><div class="k">slope</div><div class="v ${cls(c.slopeBps)}">${c.slopeBps}</div></div>
+            </div>
+            <div class="walls">
+              <div class="wall bid ${c.bidWall ? "on" : ""}">${c.bidWall ? "🧱 BID WALL" : "no bid wall"}</div>
+              <div class="wall ask ${c.askWall ? "on" : ""}">${c.askWall ? "🧱 ASK WALL" : "no ask wall"}</div>
+            </div>
+            ${fsm}
+          </div>`;
+      }
+
+      async function tick() {
+        try {
+          const r = await fetch("/api/state");
+          render(await r.json());
+        } catch {
+          $("conn").textContent = "dashboard server unreachable";
+        }
+      }
+      tick();
+      setInterval(tick, 5000);
+    </script>
+  </body>
+</html>

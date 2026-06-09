@@ -19,6 +19,7 @@ import { detectWalls } from "../strategy/orderbook.js";
 import { simulateDirectionalFill } from "./directionalBook.js";
 import { Inventory } from "../state/inventory.js";
 import { StateDB } from "../state/db.js";
+import { writeFileSync } from "node:fs";
 import type { MarketContext, OrderbookSnapshot } from "../types.js";
 
 const MARKET_CTX_REFRESH_MS = 60_000;
@@ -68,6 +69,7 @@ async function main() {
   const exitReasons = new Map<string, number>(); // running tally for telemetry
 
   const signals = new Map<string, AuctionSignals>();
+  const lastBook = new Map<string, OrderbookSnapshot>(); // latest book per coin (dashboard)
   const sigFor = (coin: string): AuctionSignals => {
     let s = signals.get(coin);
     if (!s) {
@@ -100,6 +102,7 @@ async function main() {
   // Book updates drive decisions.
   ws.on("book", (snap) => {
     if (snap.bids.length === 0 || snap.asks.length === 0) return;
+    lastBook.set(snap.coin, snap);
     const bestBid = snap.bids[0]!.price;
     const bestAsk = snap.asks[0]!.price;
     const mid = (bestBid + bestAsk) / 2;
@@ -174,6 +177,88 @@ async function main() {
       "Auction periodic stats",
     );
   }, 30_000);
+
+  // Live snapshot for the local dashboard (data/state.json) — PnL + per-coin signals.
+  const writeState = () => {
+    const coinsOut: Record<string, unknown> = {};
+    for (const coin of cfg.COINS) {
+      const sg = signals.get(coin);
+      const bk = lastBook.get(coin);
+      if (!sg || !bk || bk.bids.length === 0 || bk.asks.length === 0) continue;
+      const b = sg.bands();
+      const slope = sg.vwapSlopeBps(cfg.AUCTION_REGIME_BARS);
+      const w = detectWalls(bk);
+      const pos = inventory.get(coin);
+      const st = strategy.getState(coin);
+      const mid = (bk.bids[0]!.price + bk.asks[0]!.price) / 2;
+      coinsOut[coin] = {
+        price: mid,
+        warm: sg.warm(),
+        vwap: b.vwap,
+        upper2: b.upper2,
+        lower2: b.lower2,
+        upper1: b.upper1,
+        lower1: b.lower1,
+        rvol: Number(sg.rvol().toFixed(2)),
+        delta: Number(sg.recentDelta().toFixed(2)),
+        cvd: Number(sg.cvd().toFixed(2)),
+        slopeBps: Number(slope.toFixed(2)),
+        regime:
+          slope > cfg.AUCTION_TREND_SLOPE_BPS ? "up" : slope < -cfg.AUCTION_TREND_SLOPE_BPS ? "down" : "range",
+        bidWall: w.bidWall,
+        askWall: w.askWall,
+        position:
+          pos && pos.coinSize !== 0
+            ? {
+                side: pos.coinSize > 0 ? "LONG" : "SHORT",
+                size: pos.coinSize,
+                entry: pos.entryPrice,
+                realized: Number(pos.realizedPnL.toFixed(4)),
+              }
+            : null,
+        fsm: st ? { side: st.side, entry: st.entry, stop: st.stop, targetTagged: !!st.targetTagged } : null,
+      };
+    }
+    const positions = inventory.all();
+    let realized = 0;
+    let unreal = 0;
+    for (const p of positions) {
+      const ctx = ctxCache.get(p.coin);
+      const m = (ctx ? inventory.markToMarket(p.coin, ctx.markPrice) : undefined) ?? p;
+      realized += m.realizedPnL;
+      unreal += m.unrealizedPnL;
+    }
+    const stats = db.stats(startTs);
+    const state = {
+      ts: Date.now(),
+      startTs,
+      cfg: {
+        coins: cfg.COINS,
+        sizeUsd: cfg.AUCTION_SIZE_USD,
+        useMaker: cfg.AUCTION_USE_MAKER,
+        useDivergence: cfg.AUCTION_USE_DIVERGENCE,
+        useRegime: cfg.AUCTION_USE_REGIME,
+        useTrapped: cfg.AUCTION_USE_TRAPPED,
+        useWall: cfg.AUCTION_USE_WALL,
+        useTrail: cfg.AUCTION_USE_TRAIL,
+      },
+      global: {
+        ...stats,
+        realized: Number(realized.toFixed(4)),
+        unrealized: Number(unreal.toFixed(4)),
+        net: Number((realized + unreal).toFixed(4)),
+        openPositions: positions.filter((p) => p.coinSize !== 0).length,
+        exits: Object.fromEntries(exitReasons),
+      },
+      coins: coinsOut,
+    };
+    try {
+      writeFileSync("data/state.json", JSON.stringify(state));
+    } catch {
+      /* ignore snapshot write errors */
+    }
+  };
+  setInterval(writeState, 5000);
 
   ws.on("error", (err) => log.error({ err: err.message }, "WS error"));
   ws.connect();
