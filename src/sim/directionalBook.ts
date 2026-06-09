@@ -8,7 +8,7 @@
  */
 import type { AuctionIntent } from "../strategy/auctionReversion.js";
 import type { Fill, Position } from "../types.js";
-import { roundSize, BASE_TAKER_FEE } from "../util/math.js";
+import { roundSize, BASE_TAKER_FEE, BASE_MAKER_FEE } from "../util/math.js";
 
 export function simulateDirectionalFill(opts: {
   coin: string;
@@ -24,8 +24,10 @@ export function simulateDirectionalFill(opts: {
   if (intent.action === "hold" || !intent.side) return null;
 
   const side = intent.side;
-  // BUY crosses to the ask, SELL crosses to the bid (taker).
-  const price = side === "BUY" ? bestAsk : bestBid;
+  // Maker: a resting limit at the band (entry) or target (exit) → maker fee.
+  // Taker: cross the spread (BUY→ask, SELL→bid) → taker fee. Stops/urgent exits.
+  const isMaker = intent.maker === true && !!intent.limitPrice && intent.limitPrice > 0;
+  const price = isMaker ? intent.limitPrice! : side === "BUY" ? bestAsk : bestBid;
   if (!Number.isFinite(price) || price <= 0) return null;
 
   let size: number;
@@ -43,7 +45,7 @@ export function simulateDirectionalFill(opts: {
     side,
     price,
     size,
-    fee: notional * BASE_TAKER_FEE,
+    fee: notional * (isMaker ? BASE_MAKER_FEE : BASE_TAKER_FEE),
     timestamp: ts,
   };
 }

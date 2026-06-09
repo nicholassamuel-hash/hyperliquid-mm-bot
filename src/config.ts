@@ -132,6 +132,8 @@ const schema = z.object({
   AUCTION_USE_DIVERGENCE: z.string().default("false").transform((s) => s.toLowerCase() === "true"),
   /** Lookback bars for the price-vs-CVD divergence check. */
   AUCTION_DIVERGENCE_BARS: z.coerce.number().int().min(2).default(5),
+  /** Use maker (limit) fills for entries + target exits: 1.5bp vs 4.5bp taker. */
+  AUCTION_USE_MAKER: z.string().default("true").transform((s) => s.toLowerCase() === "true"),
 
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });

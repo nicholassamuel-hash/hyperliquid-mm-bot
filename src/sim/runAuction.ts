@@ -53,6 +53,7 @@ async function main() {
     targetReversion: cfg.AUCTION_TARGET_REVERSION,
     useDivergence: cfg.AUCTION_USE_DIVERGENCE,
     divergenceBars: cfg.AUCTION_DIVERGENCE_BARS,
+    useMaker: cfg.AUCTION_USE_MAKER,
   });
   const inventory = new Inventory();
   const db = new StateDB("data/auction.db");

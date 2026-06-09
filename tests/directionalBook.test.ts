@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { simulateDirectionalFill } from "../src/sim/directionalBook.js";
-import { BASE_TAKER_FEE } from "../src/util/math.js";
+import { BASE_TAKER_FEE, BASE_MAKER_FEE } from "../src/util/math.js";
 import type { Position } from "../src/types.js";
 
 const book = { bestBid: 99, bestAsk: 101 };
@@ -68,6 +68,20 @@ describe("simulateDirectionalFill", () => {
       ts: 1,
     });
     expect(f).toBeNull();
+  });
+
+  it("fills maker at the limit price with the maker fee", () => {
+    const f = simulateDirectionalFill({
+      coin: "BTC",
+      intent: { action: "enter_short", side: "SELL", reason: "x", maker: true, limitPrice: 110 },
+      ...book, // bestBid 99, bestAsk 101
+      sizeUsd: 11,
+      ts: 1,
+    })!;
+    expect(f.price).toBe(110); // limit price, not the touch (99/101)
+    expect(f.size).toBeCloseTo(11 / 110);
+    expect(f.fee).toBeCloseTo(f.size * 110 * BASE_MAKER_FEE);
+    expect(BASE_MAKER_FEE).toBeLessThan(BASE_TAKER_FEE); // sanity: maker cheaper
   });
 
   it("returns null when size rounds below the minimum", () => {

@@ -28,6 +28,10 @@ export interface AuctionIntent {
   reason: string;
   /** Side of the position being opened/closed (for the executor). */
   side?: Side;
+  /** Limit price for a maker fill (band edge for entry, target for exit). */
+  limitPrice?: number;
+  /** True if this fill should be modelled as a maker (resting limit) fill. */
+  maker?: boolean;
 }
 
 export interface AuctionConfig {
@@ -55,6 +59,8 @@ export interface AuctionConfig {
   useDivergence: boolean;
   /** Lookback bars for the divergence check. */
   divergenceBars: number;
+  /** Use maker (limit) fills for entries + target exits (cheaper fees). */
+  useMaker: boolean;
 }
 
 interface PosState {
@@ -111,13 +117,23 @@ export class AuctionReversion {
     const graceOver = nowTs - st.entryTs >= this.cfg.exitGraceMs;
 
     if (st.side === "LONG") {
-      if (price >= target) return this.exit(coin, "LONG", "target reached", nowTs);
+      if (price >= target) {
+        return this.exit(coin, "LONG", "target reached", nowTs, {
+          maker: this.cfg.useMaker,
+          limitPrice: target,
+        });
+      }
       if (price <= st.stop) return this.exit(coin, "LONG", "stop", nowTs);
       if (graceOver && price <= st.entry && rvol >= this.cfg.rvolFailExit && delta < 0) {
         return this.exit(coin, "LONG", "acceptance against (breakdown)", nowTs);
       }
     } else {
-      if (price <= target) return this.exit(coin, "SHORT", "target reached", nowTs);
+      if (price <= target) {
+        return this.exit(coin, "SHORT", "target reached", nowTs, {
+          maker: this.cfg.useMaker,
+          limitPrice: target,
+        });
+      }
       if (price >= st.stop) return this.exit(coin, "SHORT", "stop", nowTs);
       if (graceOver && price >= st.entry && rvol >= this.cfg.rvolFailExit && delta > 0) {
         return this.exit(coin, "SHORT", "acceptance against (breakout)", nowTs);
@@ -166,9 +182,17 @@ export class AuctionReversion {
         ? bearishDiv
         : delta <= -this.cfg.deltaConfirm || obi <= -this.cfg.obiConfirm;
       if (!sellersIn) return hold("no reversal confirm (short)");
-      const stop = price + this.cfg.stopSigma * b.sd;
-      this.state.set(coin, { side: "SHORT", entry: price, stop, entryTs: nowTs });
-      return { action: "enter_short", side: "SELL", reason: "failed auction at VAH → fade short" };
+      // Maker limit rests at the value-area edge (sell high), not the touch.
+      const entry = upper;
+      const stop = entry + this.cfg.stopSigma * b.sd;
+      this.state.set(coin, { side: "SHORT", entry, stop, entryTs: nowTs });
+      return {
+        action: "enter_short",
+        side: "SELL",
+        reason: "failed auction at VAH → fade short",
+        maker: this.cfg.useMaker,
+        limitPrice: entry,
+      };
     }
 
     // Stretched BELOW value → candidate LONG fade
@@ -178,19 +202,39 @@ export class AuctionReversion {
         ? bullishDiv
         : delta >= this.cfg.deltaConfirm || obi >= this.cfg.obiConfirm;
       if (!buyersIn) return hold("no reversal confirm (long)");
-      const stop = price - this.cfg.stopSigma * b.sd;
-      this.state.set(coin, { side: "LONG", entry: price, stop, entryTs: nowTs });
-      return { action: "enter_long", side: "BUY", reason: "failed auction at VAL → fade long" };
+      // Maker limit rests at the value-area edge (buy low), not the touch.
+      const entry = lower;
+      const stop = entry - this.cfg.stopSigma * b.sd;
+      this.state.set(coin, { side: "LONG", entry, stop, entryTs: nowTs });
+      return {
+        action: "enter_long",
+        side: "BUY",
+        reason: "failed auction at VAL → fade long",
+        maker: this.cfg.useMaker,
+        limitPrice: entry,
+      };
     }
 
     return hold("inside value");
   }
 
-  private exit(coin: string, side: "LONG" | "SHORT", reason: string, nowTs: number): AuctionIntent {
+  private exit(
+    coin: string,
+    side: "LONG" | "SHORT",
+    reason: string,
+    nowTs: number,
+    opts: { maker?: boolean; limitPrice?: number } = {},
+  ): AuctionIntent {
     this.state.delete(coin);
     this.lastExitTs.set(coin, nowTs);
     // Closing a LONG = SELL, closing a SHORT = BUY.
-    return { action: "exit", side: side === "LONG" ? "SELL" : "BUY", reason };
+    return {
+      action: "exit",
+      side: side === "LONG" ? "SELL" : "BUY",
+      reason,
+      maker: opts.maker,
+      limitPrice: opts.limitPrice,
+    };
   }
 
   /** Revert an optimistic entry whose fill did not actually execute. */

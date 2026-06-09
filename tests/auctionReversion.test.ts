@@ -15,6 +15,7 @@ const cfg: AuctionConfig = {
   targetReversion: 1,
   useDivergence: false,
   divergenceBars: 5,
+  useMaker: true,
 };
 
 // Stub signals: vwap=100, sd=5 → upper2=110, lower2=90, upper1=105, lower1=95.
@@ -59,10 +60,12 @@ describe("AuctionReversion entries", () => {
     const i = s.onUpdate("BTC", 111, fakeSignals({ rvol: 1.0, delta: -1 }), 0, 1000);
     expect(i.action).toBe("enter_short");
     expect(i.side).toBe("SELL");
+    expect(i.maker).toBe(true); // maker limit at the band
+    expect(i.limitPrice).toBeCloseTo(110); // upper2
     const st = s.getState("BTC")!;
     expect(st.side).toBe("SHORT");
-    expect(st.entry).toBe(111);
-    expect(st.stop).toBeCloseTo(116); // 111 + 1σ(5)
+    expect(st.entry).toBeCloseTo(110); // maker fills at the band edge, not the touch
+    expect(st.stop).toBeCloseTo(115); // 110 + 1σ(5)
   });
 
   it("does NOT fade when RVOL signals acceptance (Law 3 trap filter)", () => {
@@ -85,7 +88,8 @@ describe("AuctionReversion entries", () => {
     const i = s.onUpdate("BTC", 89, fakeSignals({ rvol: 1.0, delta: 1 }), 0, 1000);
     expect(i.action).toBe("enter_long");
     expect(i.side).toBe("BUY");
-    expect(s.getState("BTC")!.stop).toBeCloseTo(84); // 89 - 1σ(5)
+    expect(s.getState("BTC")!.entry).toBeCloseTo(90); // lower2
+    expect(s.getState("BTC")!.stop).toBeCloseTo(85); // 90 - 1σ(5)
   });
 
   it("fades LONG via OBI confirmation when delta alone is insufficient", () => {
