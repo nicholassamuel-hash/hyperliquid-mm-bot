@@ -134,6 +134,20 @@ const schema = z.object({
   AUCTION_DIVERGENCE_BARS: z.coerce.number().int().min(2).default(5),
   /** Use maker (limit) fills for entries + target exits: 1.5bp vs 4.5bp taker. */
   AUCTION_USE_MAKER: z.string().default("true").transform((s) => s.toLowerCase() === "true"),
+  /** Regime filter: skip fades fighting the VWAP trend (fade range / with trend). */
+  AUCTION_USE_REGIME: z.string().default("true").transform((s) => s.toLowerCase() === "true"),
+  /** Lookback bars for the VWAP-slope regime check. */
+  AUCTION_REGIME_BARS: z.coerce.number().int().min(2).default(20),
+  /** |VWAP slope| (bps over regimeBars) above this = trending. */
+  AUCTION_TREND_SLOPE_BPS: z.coerce.number().min(0).default(3),
+  /** Trapped mode: enter on reclaim back inside the band (failed breakout). */
+  AUCTION_USE_TRAPPED: z.string().default("true").transform((s) => s.toLowerCase() === "true"),
+  /** Lookback bars for the reclaim check. */
+  AUCTION_RECLAIM_BARS: z.coerce.number().int().min(1).default(3),
+  /** Order-book wall on the absorber side as an alternative entry confirm. */
+  AUCTION_USE_WALL: z.string().default("true").transform((s) => s.toLowerCase() === "true"),
+  /** Trailing exit: partial target → breakeven → run to full VWAP. */
+  AUCTION_USE_TRAIL: z.string().default("true").transform((s) => s.toLowerCase() === "true"),
 
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });

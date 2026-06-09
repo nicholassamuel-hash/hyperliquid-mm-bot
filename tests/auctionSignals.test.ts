@@ -104,3 +104,17 @@ describe("AuctionSignals priceNBarsAgo", () => {
     expect(s.priceNBarsAgo(99)).toBe(0); // not enough history
   });
 });
+
+describe("AuctionSignals vwapSlopeBps", () => {
+  it("is ~0 for a flat VWAP", () => {
+    const s = sig();
+    for (let i = 0; i <= 6; i++) s.pushTrade(100, 1, "BUY", i * 1000);
+    expect(s.vwapSlopeBps(3)).toBeCloseTo(0, 1);
+  });
+
+  it("is positive for a rising VWAP", () => {
+    const s = sig();
+    for (let i = 0; i <= 10; i++) s.pushTrade(100 + i, 1, "BUY", i * 1000);
+    expect(s.vwapSlopeBps(3)).toBeGreaterThan(0);
+  });
+});

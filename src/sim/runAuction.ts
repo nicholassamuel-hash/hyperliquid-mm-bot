@@ -15,6 +15,7 @@ import { HyperliquidWS } from "../client/websocket.js";
 import { PaperClient } from "../client/hyperliquid.js";
 import { AuctionSignals } from "../strategy/auctionSignals.js";
 import { AuctionReversion } from "../strategy/auctionReversion.js";
+import { detectWalls } from "../strategy/orderbook.js";
 import { simulateDirectionalFill } from "./directionalBook.js";
 import { Inventory } from "../state/inventory.js";
 import { StateDB } from "../state/db.js";
@@ -54,6 +55,13 @@ async function main() {
     useDivergence: cfg.AUCTION_USE_DIVERGENCE,
     divergenceBars: cfg.AUCTION_DIVERGENCE_BARS,
     useMaker: cfg.AUCTION_USE_MAKER,
+    useRegime: cfg.AUCTION_USE_REGIME,
+    regimeBars: cfg.AUCTION_REGIME_BARS,
+    trendSlopeBps: cfg.AUCTION_TREND_SLOPE_BPS,
+    useTrapped: cfg.AUCTION_USE_TRAPPED,
+    reclaimBars: cfg.AUCTION_RECLAIM_BARS,
+    useWall: cfg.AUCTION_USE_WALL,
+    useTrail: cfg.AUCTION_USE_TRAIL,
   });
   const inventory = new Inventory();
   const db = new StateDB("data/auction.db");
@@ -97,9 +105,10 @@ async function main() {
     const mid = (bestBid + bestAsk) / 2;
     const s = sigFor(snap.coin);
     const obi = obiOf(snap);
+    const walls = detectWalls(snap);
     const pos = inventory.get(snap.coin);
 
-    const intent = strategy.onUpdate(snap.coin, mid, s, obi, snap.timestamp);
+    const intent = strategy.onUpdate(snap.coin, mid, s, obi, snap.timestamp, walls);
     if (intent.action === "hold") return;
 
     const ctx = ctxCache.get(snap.coin);

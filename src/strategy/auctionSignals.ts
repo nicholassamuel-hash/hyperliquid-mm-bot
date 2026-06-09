@@ -44,6 +44,7 @@ export class AuctionSignals {
   private bars: Bar[] = [];
   private current: Bar | null = null;
   private cvdTotal = 0;
+  private vwapHist: number[] = []; // window VWAP at each bar close (for slope/regime)
 
   /**
    * @param barMs    Bar interval in ms (default 60s).
@@ -77,6 +78,15 @@ export class AuctionSignals {
     this.cvdTotal += bar.delta;
     this.bars.push(bar);
     if (this.bars.length > this.maxBars) this.bars.shift();
+    // Record the window VWAP over completed bars (for regime/slope).
+    let v = 0;
+    let pv = 0;
+    for (const b of this.bars) {
+      v += b.vol;
+      pv += b.pv;
+    }
+    this.vwapHist.push(v > 0 ? pv / v : 0);
+    if (this.vwapHist.length > this.maxBars) this.vwapHist.shift();
   }
 
   /** Completed-bar count (current forming bar excluded). */
@@ -176,5 +186,18 @@ export class AuctionSignals {
     if (idx < 0 || idx >= this.bars.length) return 0;
     const b = this.bars[idx]!;
     return b.vol > 0 ? b.pv / b.vol : 0;
+  }
+
+  /**
+   * Slope of the rolling VWAP over the last `n` bars, in bps.
+   * >0 = up-trend (VWAP rising), <0 = down-trend, ~0 = balance/range.
+   * Used by the regime filter to fade only in range / with the trend.
+   */
+  vwapSlopeBps(n: number): number {
+    if (this.vwapHist.length < n + 1) return 0;
+    const now = this.vwapHist[this.vwapHist.length - 1]!;
+    const ago = this.vwapHist[this.vwapHist.length - 1 - n]!;
+    if (ago <= 0) return 0;
+    return ((now - ago) / ago) * 10_000;
   }
 }

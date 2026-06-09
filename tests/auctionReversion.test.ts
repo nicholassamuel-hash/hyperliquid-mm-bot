@@ -16,6 +16,13 @@ const cfg: AuctionConfig = {
   useDivergence: false,
   divergenceBars: 5,
   useMaker: true,
+  useRegime: false,
+  regimeBars: 20,
+  trendSlopeBps: 3,
+  useTrapped: false,
+  reclaimBars: 3,
+  useWall: false,
+  useTrail: false,
 };
 
 // Stub signals: vwap=100, sd=5 → upper2=110, lower2=90, upper1=105, lower1=95.
@@ -26,6 +33,7 @@ function fakeSignals(o: {
   rvol: number;
   delta: number;
   priceAgo?: number;
+  slope?: number;
 }): AuctionSignals {
   const vwap = o.vwap ?? 100;
   const sd = o.sd ?? 5;
@@ -37,6 +45,7 @@ function fakeSignals(o: {
     vwap: () => vwap,
     sd: () => sd,
     priceNBarsAgo: () => o.priceAgo ?? vwap,
+    vwapSlopeBps: () => o.slope ?? 0,
     bands: () => ({
       vwap,
       sd,
@@ -208,5 +217,63 @@ describe("AuctionReversion divergence mode (opt-in)", () => {
     // price 89 (≤ lower2 90), priceAgo 92 (price fell) + delta +5 (CVD rose) → bullish div
     const i = s.onUpdate("BTC", 89, fakeSignals({ rvol: 1, delta: 5, priceAgo: 92 }), 0, 1000);
     expect(i.action).toBe("enter_long");
+  });
+});
+
+describe("AuctionReversion max-config (regime / trapped / trail / wall)", () => {
+  it("regime: skips a SHORT fade in an up-trend", () => {
+    const s = new AuctionReversion({ ...cfg, useRegime: true });
+    const i = s.onUpdate("BTC", 111, fakeSignals({ rvol: 1, delta: -1, slope: 10 }), 0, 1000);
+    expect(i.action).toBe("hold");
+    expect(i.reason).toContain("regime");
+  });
+
+  it("regime: still allows a LONG fade in an up-trend (with the trend)", () => {
+    const s = new AuctionReversion({ ...cfg, useRegime: true });
+    const i = s.onUpdate("BTC", 89, fakeSignals({ rvol: 1, delta: 1, slope: 10 }), 0, 1000);
+    expect(i.action).toBe("enter_long");
+  });
+
+  it("trapped: enters SHORT on a reclaim back below VAH", () => {
+    const s = new AuctionReversion({ ...cfg, useTrapped: true });
+    // was above VAH (112), now reclaimed back below (109)
+    const i = s.onUpdate("BTC", 109, fakeSignals({ rvol: 1, delta: -1, priceAgo: 112 }), 0, 1000);
+    expect(i.action).toBe("enter_short");
+    expect(i.reason).toContain("trapped");
+  });
+
+  it("trapped: no entry without a prior breakout (no reclaim)", () => {
+    const s = new AuctionReversion({ ...cfg, useTrapped: true });
+    const i = s.onUpdate("BTC", 109, fakeSignals({ rvol: 1, delta: -1, priceAgo: 105 }), 0, 1000);
+    expect(i.action).toBe("hold");
+  });
+
+  it("trail: tags partial target → moves stop to BE → runs to full VWAP", () => {
+    const s = new AuctionReversion({ ...cfg, useTrail: true, targetReversion: 0.6 });
+    s.onUpdate("BTC", 89, fakeSignals({ rvol: 1, delta: 1 }), 0, 1000); // long, entry 90
+    const t = s.onUpdate("BTC", 96, fakeSignals({ rvol: 1, delta: 0 }), 0, 2000); // target0=96
+    expect(t.action).toBe("hold"); // running, not exited
+    expect(s.getState("BTC")!.targetTagged).toBe(true);
+    expect(s.getState("BTC")!.stop).toBeCloseTo(90); // breakeven
+    const e = s.onUpdate("BTC", 100, fakeSignals({ rvol: 1, delta: 0 }), 0, 3000); // full VWAP
+    expect(e.action).toBe("exit");
+    expect(e.reason).toContain("full");
+  });
+
+  it("trail: pulls back to the breakeven stop after tagging", () => {
+    const s = new AuctionReversion({ ...cfg, useTrail: true, targetReversion: 0.6 });
+    s.onUpdate("BTC", 89, fakeSignals({ rvol: 1, delta: 1 }), 0, 1000);
+    s.onUpdate("BTC", 96, fakeSignals({ rvol: 1, delta: 0 }), 0, 2000); // tag → stop 90
+    const e = s.onUpdate("BTC", 90, fakeSignals({ rvol: 1, delta: 0 }), 0, 3000);
+    expect(e.action).toBe("exit");
+    expect(e.reason).toBe("stop");
+  });
+
+  it("wall: an order-book wall confirms entry when delta does not", () => {
+    const s = new AuctionReversion({ ...cfg, useWall: true });
+    const walls = { bidWall: false, askWall: true, bidWallRatio: 1, askWallRatio: 5 };
+    // short at VAH, delta +5 (no seller confirm by delta) but ask-side wall present
+    const i = s.onUpdate("BTC", 111, fakeSignals({ rvol: 1, delta: 5 }), 0, 1000, walls);
+    expect(i.action).toBe("enter_short");
   });
 });
