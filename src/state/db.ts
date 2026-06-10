@@ -7,6 +7,31 @@ import path from "node:path";
 import fs from "node:fs";
 import type { Fill, OurQuote } from "../types.js";
 
+/**
+ * One closed round-trip with the entry-time context attached, so a baking run
+ * can be sliced by regime / trigger / exit reason instead of a single blind net.
+ * `gross` is price-only PnL (the edge question); `fee` is entry+exit fees.
+ */
+export interface TradeRow {
+  coin: string;
+  side: "LONG" | "SHORT";
+  trigger: string; // "band" | "trapped"
+  entryReason: string;
+  exitReason: string;
+  regime: string; // "up" | "down" | "range"
+  slopeBps: number;
+  rvolEntry: number;
+  entryPrice: number;
+  exitPrice: number;
+  size: number;
+  notional: number;
+  gross: number; // price-only PnL on the round-trip
+  fee: number; // entry fee + exit fee
+  net: number; // gross - fee
+  holdMs: number;
+  ts: number; // exit timestamp
+}
+
 export class StateDB {
   private db: DatabaseSync;
 
@@ -64,7 +89,62 @@ export class StateDB {
       );
 
       CREATE INDEX IF NOT EXISTS idx_outcomes_coin_ts ON outcomes(coin, ts);
+
+      CREATE TABLE IF NOT EXISTS trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        coin TEXT NOT NULL,
+        side TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        entry_reason TEXT NOT NULL,
+        exit_reason TEXT NOT NULL,
+        regime TEXT NOT NULL,
+        slope_bps REAL NOT NULL,
+        rvol_entry REAL NOT NULL,
+        entry_price REAL NOT NULL,
+        exit_price REAL NOT NULL,
+        size REAL NOT NULL,
+        notional REAL NOT NULL,
+        gross REAL NOT NULL,
+        fee REAL NOT NULL,
+        net REAL NOT NULL,
+        hold_ms INTEGER NOT NULL,
+        ts INTEGER NOT NULL,
+        is_paper INTEGER NOT NULL DEFAULT 1
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_trades_ts ON trades(ts);
     `);
+  }
+
+  /** Persist one closed round-trip with its entry-time context. */
+  recordTrade(t: TradeRow, isPaper = true) {
+    this.db
+      .prepare(
+        `INSERT INTO trades
+           (coin, side, trigger, entry_reason, exit_reason, regime, slope_bps,
+            rvol_entry, entry_price, exit_price, size, notional, gross, fee, net,
+            hold_ms, ts, is_paper)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        t.coin, t.side, t.trigger, t.entryReason, t.exitReason, t.regime, t.slopeBps,
+        t.rvolEntry, t.entryPrice, t.exitPrice, t.size, t.notional, t.gross, t.fee, t.net,
+        t.holdMs, t.ts, isPaper ? 1 : 0,
+      );
+  }
+
+  /** All closed round-trips since `sinceMs`, oldest first. */
+  getTrades(sinceMs = 0): TradeRow[] {
+    return this.db
+      .prepare(
+        `SELECT coin, side, trigger,
+                entry_reason AS entryReason, exit_reason AS exitReason,
+                regime, slope_bps AS slopeBps, rvol_entry AS rvolEntry,
+                entry_price AS entryPrice, exit_price AS exitPrice,
+                size, notional, gross, fee, net, hold_ms AS holdMs, ts
+         FROM trades WHERE ts >= ? ORDER BY ts ASC`,
+      )
+      .all(sinceMs) as unknown as TradeRow[];
   }
 
   recordOutcome(coin: string, outcome: string, ts: number) {

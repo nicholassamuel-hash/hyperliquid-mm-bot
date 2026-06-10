@@ -14,7 +14,7 @@ import { createLogger } from "../util/logger.js";
 import { HyperliquidWS } from "../client/websocket.js";
 import { PaperClient } from "../client/hyperliquid.js";
 import { AuctionSignals } from "../strategy/auctionSignals.js";
-import { AuctionReversion } from "../strategy/auctionReversion.js";
+import { AuctionReversion, type AuctionEntryMeta } from "../strategy/auctionReversion.js";
 import { detectWalls } from "../strategy/orderbook.js";
 import { simulateDirectionalFill } from "./directionalBook.js";
 import { Inventory } from "../state/inventory.js";
@@ -67,6 +67,17 @@ async function main() {
   const inventory = new Inventory();
   const db = new StateDB("data/auction.db");
   const exitReasons = new Map<string, number>(); // running tally for telemetry
+
+  // Per-coin open round-trip context, captured at entry and consumed at exit to
+  // persist a sliceable `trades` row (regime / trigger / gross vs fee).
+  interface OpenTrade {
+    meta?: AuctionEntryMeta;
+    entryReason: string;
+    entryPrice: number;
+    entryFee: number;
+    entryTs: number;
+  }
+  const openTrades = new Map<string, OpenTrade>();
 
   const signals = new Map<string, AuctionSignals>();
   const lastBook = new Map<string, OrderbookSnapshot>(); // latest book per coin (dashboard)
@@ -136,6 +147,46 @@ async function main() {
     db.recordFill(fill);
     if (intent.action === "exit") {
       exitReasons.set(intent.reason, (exitReasons.get(intent.reason) ?? 0) + 1);
+      db.recordOutcome(snap.coin, intent.reason, fill.timestamp);
+      // Close out the open round-trip → persist a sliceable trade row.
+      const ot = openTrades.get(snap.coin);
+      if (ot) {
+        const side = fill.side === "SELL" ? "LONG" : "SHORT"; // SELL closes a long, BUY a short
+        const gross =
+          side === "LONG"
+            ? fill.size * (fill.price - ot.entryPrice)
+            : fill.size * (ot.entryPrice - fill.price);
+        const fee = ot.entryFee + fill.fee;
+        db.recordTrade({
+          coin: snap.coin,
+          side,
+          trigger: ot.meta?.trigger ?? "band",
+          entryReason: ot.entryReason,
+          exitReason: intent.reason,
+          regime: ot.meta?.regime ?? "range",
+          slopeBps: ot.meta?.slopeBps ?? 0,
+          rvolEntry: ot.meta?.rvol ?? 0,
+          entryPrice: ot.entryPrice,
+          exitPrice: fill.price,
+          size: fill.size,
+          notional: ot.entryPrice * fill.size,
+          gross,
+          fee,
+          net: gross - fee,
+          holdMs: fill.timestamp - ot.entryTs,
+          ts: fill.timestamp,
+        });
+        openTrades.delete(snap.coin);
+      }
+    } else {
+      // Entry fill — start tracking the round-trip's entry-time context.
+      openTrades.set(snap.coin, {
+        meta: intent.meta,
+        entryReason: intent.reason,
+        entryPrice: fill.price,
+        entryFee: fill.fee,
+        entryTs: fill.timestamp,
+      });
     }
     log.info(
       {

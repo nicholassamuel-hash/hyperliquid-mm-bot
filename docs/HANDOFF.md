@@ -12,6 +12,7 @@
 ## Status (PAPER — no real money)
 - PM2 process **`auction`** is LIVE on the VPS running **v5 "max-config"**. Old market-maker process `paper` = **stopped** (it was structurally negative-EV).
 - Modal **$30 USDC** (not deposited). Goal = **experiment + learning** (OK to lose it). Jakarta latency ~250ms.
+- **2026-06-10: instrumented** (logging-only, no logic change). Each closed round-trip now writes a `trades` row with entry-time context (regime, RVOL, trigger, gross-vs-fees). Read it with **`npm run analyze:auction`** — slices WR/gross by regime/exit/coin so the "no edge" question is answered by *where*, not one blind net. See [VERDICT.md](./VERDICT.md) for the decision rule (gate to a +gross regime, else pivot — don't blind-tune).
 
 ## What the bot is — AMT auction-reversion (latency-insensitive, directional)
 Fades failed auctions back to value; holds positions minutes–hours (so 250ms latency is irrelevant). Full stack, all config-gated, all ON in v5:
@@ -39,6 +40,7 @@ Across **every** version, gross PnL (before fees) is ≈ **FLAT** → the revers
 ## Operations
 - **Deploy:** on VPS `cd ~/bot && git pull --ff-only && npm run build && pm2 restart auction --update-env`. (`.env` on VPS is gitignored; new config vars use defaults in `src/config.ts`. VPS `.env` currently sets `AUCTION_USE_DIVERGENCE=true` etc.)
 - **Check:** `ssh ... "pm2 logs auction --nostream --lines 30"` → read `net` + `exits:{}` (in-memory, this run). Or **dashboard:** `npm run dashboard` → http://localhost:8787 (or `start-dashboard.cmd` / desktop shortcut).
+- **Edge breakdown (the real read):** on the VPS `cd ~/bot && npm run analyze:auction` (optional `[hours]` arg) → per-regime / per-exit / per-coin WR + **gross (edge) vs net (after fees)**. Needs closed round-trips, so let it bake first.
 - **Data:** `data/auction.db` (fills) + `data/state.json` (live snapshot) on VPS, both gitignored.
 - **Dev:** `npm test` · `npm run build` · `npm run typecheck`.
 - Restart resets the in-memory PnL counter + ~30min signal warm-up (data persists in db/logs).

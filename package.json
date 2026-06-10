@@ -16,6 +16,7 @@
     "dashboard": "node dashboard/server.mjs",
     "dashboard": "tsx src/cli/dashboard.ts",
     "analyze": "tsx src/cli/analyze.ts",
+    "analyze:auction": "tsx src/cli/analyzeAuction.ts",
     "gen-wallet": "tsx scripts/gen-wallet.ts",
     "test": "vitest run",
     "test:watch": "vitest",

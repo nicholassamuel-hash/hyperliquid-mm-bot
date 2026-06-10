@@ -33,6 +33,23 @@ export interface AuctionIntent {
   limitPrice?: number;
   /** True if this fill should be modelled as a maker (resting limit) fill. */
   maker?: boolean;
+  /** Entry-time context for instrumentation — present on enter_* intents only. */
+  meta?: AuctionEntryMeta;
+}
+
+/**
+ * Snapshot of the conditions at entry, recorded per round-trip so a baking run
+ * can be sliced by regime / trigger afterwards (instead of one blind net PnL).
+ */
+export interface AuctionEntryMeta {
+  /** VWAP-slope regime at entry. Always computed (telemetry), independent of the regime filter. */
+  regime: "up" | "down" | "range";
+  /** VWAP slope in bps over regimeBars. */
+  slopeBps: number;
+  /** RVOL at entry. */
+  rvol: number;
+  /** Location trigger style: simple band touch vs trapped-reclaim. */
+  trigger: "band" | "trapped";
 }
 
 export interface AuctionConfig {
@@ -205,9 +222,17 @@ export class AuctionReversion {
     const delta = signals.recentDelta();
 
     // Regime: skip fades that fight the VWAP trend (fade only in range / with trend).
-    const slope = this.cfg.useRegime ? signals.vwapSlopeBps(this.cfg.regimeBars) : 0;
+    // Slope is computed unconditionally for telemetry; the *gate* below stays
+    // behind `useRegime`, so trading behaviour is unchanged when the filter is off.
+    const slope = signals.vwapSlopeBps(this.cfg.regimeBars);
     const trendingUp = slope > this.cfg.trendSlopeBps;
     const trendingDown = slope < -this.cfg.trendSlopeBps;
+    const meta: AuctionEntryMeta = {
+      regime: trendingUp ? "up" : trendingDown ? "down" : "range",
+      slopeBps: Number(slope.toFixed(2)),
+      rvol: Number(rvol.toFixed(2)),
+      trigger: this.cfg.useTrapped ? "trapped" : "band",
+    };
 
     // CVD/price divergence: price one way while aggressor CVD the other → absorption.
     let bearishDiv = false;
@@ -253,6 +278,7 @@ export class AuctionReversion {
           : "failed auction at VAH → fade short",
         maker: this.cfg.useMaker,
         limitPrice: entry,
+        meta,
       };
     }
 
@@ -276,6 +302,7 @@ export class AuctionReversion {
           : "failed auction at VAL → fade long",
         maker: this.cfg.useMaker,
         limitPrice: entry,
+        meta,
       };
     }
 
