@@ -68,9 +68,11 @@ async function fetchSpotMids(coins: string[]): Promise<Map<string, number>> {
   for (const coin of coins) {
     const base = tokenIdx.get(SPOT_TOKEN[coin] ?? "");
     if (base === undefined || usdc === undefined) continue;
-    const uniIdx = meta.universe.findIndex((u) => u.tokens[0] === base && u.tokens[1] === usdc);
-    if (uniIdx === -1) continue;
-    const mid = Number(ctxs[uniIdx]?.midPx);
+    const pair = meta.universe.find((u) => u.tokens[0] === base && u.tokens[1] === usdc);
+    if (!pair) continue;
+    // ctxs align with universe[i].index, NOT the array position (verified live:
+    // UBTC arrayPos=140 vs index=142 — array position gives a wrong market).
+    const mid = Number(ctxs[pair.index]?.midPx);
     if (Number.isFinite(mid) && mid > 0) out.set(coin, mid);
   }
   return out;
