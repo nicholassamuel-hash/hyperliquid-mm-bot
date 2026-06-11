@@ -125,6 +125,33 @@ export function replayCarry(points: FundingPoint[], p: CarryParams): CarryResult
   return r;
 }
 
+/**
+ * Incremental EWMA of the annualized funding rate — the live counterpart of the
+ * forecast used in replayCarry, fed one settled funding point at a time.
+ */
+export class EwmaAprTracker {
+  private ewma: number | null = null;
+
+  constructor(private readonly halfLifeHours: number) {}
+
+  /** Feed one settled funding point; returns the updated EWMA APR. */
+  push(rate: number, intervalHours: number): number {
+    const apr = annualize(rate, intervalHours);
+    if (this.ewma === null) {
+      this.ewma = apr;
+    } else {
+      const alpha = 1 - Math.pow(0.5, intervalHours / this.halfLifeHours);
+      this.ewma += alpha * (apr - this.ewma);
+    }
+    return this.ewma;
+  }
+
+  /** Current EWMA APR, or null before the first point. */
+  get value(): number | null {
+    return this.ewma;
+  }
+}
+
 /** Named policy variants for the standard report grid. */
 export const POLICY_GRID: Array<{ name: string; thetaInApr: number; thetaOutApr: number }> = [
   { name: "always-in", thetaInApr: -Infinity, thetaOutApr: -Infinity },

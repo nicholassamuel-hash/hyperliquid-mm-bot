@@ -149,6 +149,25 @@ const schema = z.object({
   /** Trailing exit: partial target → breakeven → run to full VWAP. */
   AUCTION_USE_TRAIL: z.string().default("true").transform((s) => s.toLowerCase() === "true"),
 
+  // --- Funding-carry strategy (npm run carry) ---
+  /** Coins to hold the delta-neutral carry on (need an HL spot leg). */
+  CARRY_COINS: z
+    .string()
+    .default("HYPE,BTC,ETH")
+    .transform((s) => s.split(",").map((t) => t.trim().toUpperCase()).filter(Boolean)),
+  /** Notional per coin per leg (USD). */
+  CARRY_NOTIONAL_USD: z.coerce.number().min(1).default(100),
+  /** Round-trip cost (bps of notional, both legs, fees+spread). Half charged per side. */
+  CARRY_COST_RT_BPS: z.coerce.number().min(0).default(30),
+  /** Exit when EWMA funding APR drops below this (decimal, e.g. -0.05 = -5%). */
+  CARRY_EXIT_APR: z.coerce.number().default(-0.05),
+  /** Re-enter when EWMA funding APR rises back above this. */
+  CARRY_REENTER_APR: z.coerce.number().default(0),
+  /** EWMA half-life (hours) for the funding forecast. */
+  CARRY_EWMA_HALFLIFE_H: z.coerce.number().min(1).default(72),
+  /** Poll cadence (ms) for accrual checks + basis snapshots. */
+  CARRY_POLL_MS: z.coerce.number().int().min(30_000).default(300_000),
+
   LOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error", "fatal"]).default("info"),
 });
 

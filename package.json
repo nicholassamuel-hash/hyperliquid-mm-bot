@@ -18,6 +18,8 @@
     "analyze": "tsx src/cli/analyze.ts",
     "analyze:auction": "tsx src/cli/analyzeAuction.ts",
     "backtest:funding": "tsx src/cli/backtestFunding.ts",
+    "carry": "tsx src/sim/runCarry.ts",
+    "carry:report": "tsx src/cli/carryReport.ts",
     "gen-wallet": "tsx scripts/gen-wallet.ts",
     "test": "vitest run",
     "test:watch": "vitest",

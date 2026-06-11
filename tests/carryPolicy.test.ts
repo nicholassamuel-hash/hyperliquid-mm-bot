@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { replayCarry, annualize } from "../src/research/carryPolicy.js";
+import { replayCarry, annualize, EwmaAprTracker } from "../src/research/carryPolicy.js";
 import type { FundingPoint } from "../src/research/fundingSources.js";
 
 /** n hourly points at a constant per-hour rate. */
@@ -70,5 +70,31 @@ describe("replayCarry — hysteresis", () => {
     expect(r.entries).toBe(1);
     expect(r.exits).toBe(0); // still in at the end
     expect(r.fees).toBeCloseTo((30 / 2 / 1e4) * 1000, 6); // $1.50 one way
+  });
+});
+
+describe("EwmaAprTracker (live guard input)", () => {
+  it("equals the annualized rate after constant input", () => {
+    const tr = new EwmaAprTracker(72);
+    for (let i = 0; i < 500; i++) tr.push(0.0000125, 1);
+    expect(tr.value).toBeCloseTo(annualize(0.0000125, 1), 4);
+  });
+
+  it("decays toward a new funding level at the half-life pace", () => {
+    const tr = new EwmaAprTracker(72);
+    for (let i = 0; i < 500; i++) tr.push(0.0000125, 1); // settle at ~11% APR
+    const before = tr.value!;
+    for (let i = 0; i < 72; i++) tr.push(-0.0000125, 1); // one half-life of negative
+    const after = tr.value!;
+    // after one half-life the EWMA should sit halfway between old and new level
+    const target = (before + annualize(-0.0000125, 1)) / 2;
+    expect(after).toBeCloseTo(target, 2);
+  });
+
+  it("is null before any data, and matches replayCarry's alpha for 8h points", () => {
+    const tr = new EwmaAprTracker(72);
+    expect(tr.value).toBeNull();
+    tr.push(0.0001, 8);
+    expect(tr.value).toBeCloseTo(annualize(0.0001, 8), 6); // first point = seed
   });
 });
